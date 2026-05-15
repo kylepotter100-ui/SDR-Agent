@@ -92,7 +92,7 @@ If you've tried something twice and it's not working, stop. Explain in chat what
 
 ## Stack
 
-- **Frontend & backend**: Next.js 15 with App Router, TypeScript, deployed to Vercel
+- **Frontend & backend**: Next.js 16 with App Router, TypeScript, deployed to Vercel
 - **Database**: Supabase (Postgres + Auth + Storage), accessed via the Supabase MCP for schema migrations and queries
 - **Agent scheduling**: Vercel Cron for the weekly Monday run
 - **AI**: Anthropic Claude API — Sonnet 4.6 (`claude-sonnet-4-6`) for personalisation, Opus 4.7 (`claude-opus-4-7`) for ranking and reply classification
