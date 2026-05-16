@@ -168,7 +168,7 @@ digests (
 )
 ```
 
-All migrations go through the Supabase MCP, written to `supabase/migrations/`.
+All migrations live in `supabase/migrations/` as hand-authored SQL files, applied via Supabase Studio's SQL Editor. See `docs/decisions/0002-mcp-installation.md` for the rationale.
 
 ---
 
@@ -184,7 +184,7 @@ Phase 1 is divided into ten checkpoints. After each, **pause and wait for Kyle t
 
 ### Checkpoint 2 — Supabase project linked, initial schema migrated
 
-**Build:** Supabase MCP installed and connected. The three tables from the data model above migrated via Supabase MCP. RLS policies set (authenticated users full access — to be tightened in Phase 2). Supabase client wrapper at `lib/db.ts`. Connection tested by inserting and reading a dummy `companies_house_raw` row.
+**Build:** The three tables from the data model above migrated via hand-authored SQL files in `supabase/migrations/`, applied through Supabase Studio's SQL Editor. RLS policies set (authenticated users full access — to be tightened in Phase 2). Supabase client wrapper at `lib/db.ts`. Connection tested by inserting and reading a dummy `companies_house_raw` row.
 
 **Kyle reviews:** The migration file in `supabase/migrations/`. The tables visible in Supabase Studio. The dummy row reads back correctly.
 
@@ -210,7 +210,7 @@ Phase 1 is divided into ten checkpoints. After each, **pause and wait for Kyle t
 
 ### Checkpoint 5 — Apollo enrichment working
 
-**Build:** Director email lookup via the Apollo MCP. For each prospect with a Companies House director name, attempt an email match. Cache the result regardless of success. Tolerate Apollo no-matches gracefully — they're common.
+**Build:** Director email lookup via the Apollo REST API, authenticated with `APOLLO_API_KEY`. For each prospect with a Companies House director name, attempt an email match. Cache the result regardless of success. Tolerate Apollo no-matches gracefully — they're common. See `docs/decisions/0002-mcp-installation.md` for why we are calling the REST API directly rather than via an Apollo MCP.
 
 **Kyle reviews:** The match rate (realistic target: 30-50% of small-business directors will have an Apollo record). Sample emails returned. Cost tracking.
 
@@ -311,7 +311,7 @@ The prompt is intentionally opinionated. If Kyle wants a different tone, the pro
 
 **Maps cross-reference.** For each company, call Google Places `findPlaceFromText` with company name + town. If a place returns and has a `website` field, mark `has_website = true`. If the place exists but no website, mark `has_website = false` and capture `facebook_url` if the place's URL is facebook.com. If no place result at all, `has_website` stays `null` — that's also a strong signal (business may be too new for Maps yet, which is gold for our pitch).
 
-**Apollo enrichment.** Use the Apollo MCP tools. For each prospect, look up the company + director name; cache the result regardless of whether an email is found. If Apollo returns nothing, the digest just won't include an email and Kyle can dig manually.
+**Apollo enrichment.** Call the Apollo REST API directly using `APOLLO_API_KEY`. For each prospect, look up the company + director name; cache the result regardless of whether an email is found. If Apollo returns nothing, the digest just won't include an email and Kyle can dig manually.
 
 **Ranking.** Pass all the week's candidates to Opus 4.7 in a single call with a structured prompt: rank by fit, output JSON with `prospect_id`, `score` (0-100), `reasoning` (one sentence). Pick top 15.
 
