@@ -35,9 +35,9 @@
 
 ## Outlook OAuth setup
 
-Two viable paths — pick one and document the decision in `docs/decisions/`.
+Microsoft Graph API direct, for both send and read. The hybrid Microsoft 365 MCP approach previously listed here is closed — see `docs/decisions/0002-mcp-installation.md` for why we are not attempting the MCP install in this environment.
 
-**Path A (recommended): Microsoft Graph API direct.** Full control over send and read, no MCP dependency, well-documented. The flow:
+The flow:
 
 1. Register an app in Azure AD at `entra.microsoft.com` → App registrations → New registration. Single-tenant (your kpsolutions.io tenant) is fine.
 2. Configure redirect URI: `https://app.kpsolutions.io/api/auth/microsoft/callback` (plus a localhost variant for dev).
@@ -47,8 +47,7 @@ Two viable paths — pick one and document the decision in `docs/decisions/`.
 6. OAuth callback at `app.kpsolutions.io/api/auth/microsoft/callback` exchanges the auth code for access + refresh tokens.
 7. Store refresh token in Supabase, encrypted at rest using Supabase Vault.
 8. On send, exchange refresh token for access token (cache for ~50 minutes), call `POST /me/sendMail` on Microsoft Graph.
-
-**Path B: Microsoft 365 MCP for reads, Graph for sends.** The official Microsoft 365 MCP exposes `outlook_email_search` and `outlook_calendar_search` tools — convenient for the reply-detection layer because you offload inbox querying to the MCP rather than hand-rolling Graph queries. Sending still goes through Graph directly (the MCP doesn't expose a send tool at time of writing). Hybrid approach: MCP for inbound, Graph for outbound.
+9. For reply detection, query the Graph messages endpoint directly under the same OAuth token — no MCP layer.
 
 The OAuth flow happens **once**, ever. After that the refresh token lasts up to 90 days of inactivity (longer if used regularly) — the app refreshes it on every send so this is effectively indefinite.
 

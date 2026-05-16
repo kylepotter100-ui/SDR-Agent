@@ -93,10 +93,10 @@ If you've tried something twice and it's not working, stop. Explain in chat what
 ## Stack
 
 - **Frontend & backend**: Next.js 16 with App Router, TypeScript, deployed to Vercel
-- **Database**: Supabase (Postgres + Auth + Storage), accessed via the Supabase MCP for schema migrations and queries
+- **Database**: Supabase (Postgres + Auth + Storage). Schema migrations are hand-authored SQL files under `supabase/migrations/` and applied via Supabase Studio's SQL Editor. Runtime access from the agent goes through `lib/db.ts`.
 - **Agent scheduling**: Vercel Cron for the weekly Monday run
 - **AI**: Anthropic Claude API — Sonnet 4.6 (`claude-sonnet-4-6`) for personalisation, Opus 4.7 (`claude-opus-4-7`) for ranking and reply classification
-- **Data sources**: Companies House Public Data API (free), Google Places API (paid, low volume), Apollo.io via MCP (paid, Phase 1+)
+- **Data sources**: Companies House Public Data API (free), Google Places API (paid, low volume), Apollo.io REST API (paid, Phase 1+)
 - **Email**: Resend for transactional sends to Kyle's inbox (Phase 1); Microsoft Graph API + Outlook OAuth for sending from `kyle.potter@kpsolutions.io` (Phase 3)
 - **Auth**: Supabase Auth (single-user for now, multi-user-ready)
 - **Styling**: Tailwind v4. Design tokens to be confirmed before Phase 2 begins — do not import any colours, fonts, or visual conventions from earlier KP Solutions projects.
@@ -105,12 +105,12 @@ If you've tried something twice and it's not working, stop. Explain in chat what
 
 ## MCPs to use
 
-Claude Code should install and use these MCP servers. The getting-started guide walks through installation.
+Direct API access is the canonical mechanism for Supabase, Apollo, and Microsoft 365 in this project. Hosted MCPs for those services are not reachable from Claude Code on the web in our current environment, and we are not retrying them per checkpoint. See `docs/decisions/0002-mcp-installation.md` for the reasoning.
 
-- **Supabase MCP** — for all schema migrations, RLS policies, seed data, and ad-hoc queries during development. Do not write raw SQL files outside `supabase/migrations/`; use the MCP to generate them.
-- **Apollo MCP** — for contact enrichment in the discovery pipeline (Phase 1 onward).
-- **Microsoft 365 MCP** — for Outlook inbox search and reply detection (Phase 3 onward). Sending goes via Microsoft Graph direct, not the MCP.
-- **Vercel MCP** — optional but useful for deployment status, log fetching, and environment variable management.
+- **Supabase** — migrations are written by hand into `supabase/migrations/` and applied via Supabase Studio's SQL Editor. Runtime access goes through `lib/db.ts`, which reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+- **Apollo** — director enrichment in Checkpoint 5 calls the Apollo REST API directly using `APOLLO_API_KEY`.
+- **Microsoft 365** — Phase 3 sends and reads via Microsoft Graph directly, behind the Outlook OAuth flow described in `briefs/phase-3-send-from-app.md`.
+- **Vercel MCP** — optional but useful for deployment status, log fetching, and environment variable management. Unaffected by the limitation above.
 
 ---
 
@@ -165,4 +165,4 @@ Phase 1 ships first and runs in production before Phase 2 begins. Don't pre-buil
 - `lib/prompts/` — AI prompt strings, one per file.
 - `app/api/` — Next.js route handlers including cron endpoints.
 - `app/(dashboard)/` — the web app UI (Phase 2 onward).
-- `supabase/migrations/` — DB schema changes, written via the Supabase MCP.
+- `supabase/migrations/` — DB schema changes, hand-authored SQL applied via Supabase Studio.
