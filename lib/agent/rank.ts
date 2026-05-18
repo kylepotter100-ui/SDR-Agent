@@ -162,7 +162,7 @@ export async function rank(): Promise<RankSummary> {
       max_tokens: MAX_OUTPUT_TOKENS,
       thinking: { type: "disabled" },
       output_config: {
-        effort: "high",
+        effort: "medium",
         format: zodOutputFormat(RankingSchema),
       },
       system: [
