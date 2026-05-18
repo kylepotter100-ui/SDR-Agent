@@ -218,6 +218,8 @@ Phase 1 is divided into ten checkpoints. After each, **pause and wait for Kyle t
 
 **Build:** `lib/prompts/personalise.ts` containing the v0 prompt template (see "Personalisation prompt v0" section below). A wrapper at `lib/agent/personalise.ts` that calls Sonnet 4.6 with prospect context and writes subject + body to the prospect record. Generate emails for 10 real prospects from Checkpoints 3-5.
 
+Personalisation must work whether `director_email` is set or null. The prompt input is `director_name` plus the rest of the prospect record — the email address is delivery metadata, not personalisation input — so a prospect with `director_email IS NULL` still produces a usable draft. Kyle resolves the missing address manually before sending.
+
 **Kyle reviews:** The 10 generated emails, read in full. **This is the most important review of Phase 1.** Email quality determines whether the entire system works. Expect the first pass to need 2-3 prompt iterations before quality is acceptable. Plan time for this — don't rush past it.
 
 Specifically, Kyle is looking for:
@@ -238,6 +240,8 @@ Specifically, Kyle is looking for:
 ### Checkpoint 8 — Digest composition and test send
 
 **Build:** `lib/agent/digest.ts` composes an HTML email containing the 15 ranked prospects with all relevant fields and the personalised email drafts in copyable code blocks. Mobile-optimised. Sent via Resend to Kyle's nominated inbox.
+
+Each prospect block displays the director's name and email. Where `director_email IS NULL`, the email line reads `Email: lookup manually before send` instead, so Kyle knows to resolve it before pasting the draft into Outlook. Apollo backfills the address on future prospects once the plan is upgraded — see decision 0002 and the Checkpoint 5 follow-up migration.
 
 **Kyle reviews:** The actual digest email in his inbox, opened on mobile. Is it scannable in two minutes? Are the email drafts easily copyable? Are the prospect facts complete?
 
@@ -315,7 +319,7 @@ The prompt is intentionally opinionated. If Kyle wants a different tone, the pro
 
 **Ranking.** Pass all the week's candidates to Opus 4.7 in a single call with a structured prompt: rank by fit, output JSON with `prospect_id`, `score` (0-100), `reasoning` (one sentence). Pick top 15.
 
-**Digest email.** Send via Resend. Plain HTML, mobile-optimised. Each prospect block: business name (bold), one-line summary, ranking score, signal, then the full personalised email draft in a `<pre>` block for easy copy. Subject line: `KP Prospect Digest — {{week_of_date}} — 15 prospects ranked`.
+**Digest email.** Send via Resend. Plain HTML, mobile-optimised. Each prospect block: business name (bold), one-line summary, director name + email (or `Email: lookup manually before send` when `director_email IS NULL`), ranking score, signal, then the full personalised email draft in a `<pre>` block for easy copy. Subject line: `KP Prospect Digest — {{week_of_date}} — 15 prospects ranked`.
 
 **Cron.** Vercel Cron at `0 7 * * 1` (07:00 UTC = 08:00 BST Monday). The cron hits `app/api/cron/weekly-digest/route.ts` which orchestrates the full pipeline. Protect the route with a `CRON_SECRET` header check. Also expose `app/api/cron/manual-trigger/route.ts` for testing — same logic, no schedule.
 
