@@ -14,6 +14,7 @@
 
 import { db } from "@/lib/db";
 import type { Json } from "@/lib/db.types";
+import { chFetch } from "@/lib/companies-house";
 import {
   POSTCODE_PREFIXES,
   SIC_CODES,
@@ -22,7 +23,6 @@ import {
   type PostcodePrefix,
 } from "@/lib/config";
 
-const CH_BASE_URL = "https://api.company-information.service.gov.uk";
 const PAGE_SIZE = 100;
 const LOOKBACK_DAYS = 7;
 const PAGE_LIMIT = 50;
@@ -71,16 +71,6 @@ export interface DiscoverSummary {
   }>;
 }
 
-function chAuthHeader(): string {
-  const key = process.env.COMPANIES_HOUSE_API_KEY;
-  if (!key) {
-    throw new Error(
-      "Missing required environment variable: COMPANIES_HOUSE_API_KEY",
-    );
-  }
-  return `Basic ${Buffer.from(`${key}:`).toString("base64")}`;
-}
-
 function ymdUtc(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -115,29 +105,6 @@ function bestTier(codes: string[]): number | null {
     if (tier !== null && (best === null || tier < best)) best = tier;
   }
   return best;
-}
-
-async function chFetch(path: string): Promise<Response> {
-  const url = `${CH_BASE_URL}${path}`;
-  const headers = {
-    Authorization: chAuthHeader(),
-    Accept: "application/json",
-  };
-  let res = await fetch(url, { headers });
-  if (res.status === 429) {
-    const retryAfter = Number(res.headers.get("retry-after") ?? "1");
-    await new Promise((r) =>
-      setTimeout(r, Math.max(retryAfter, 1) * 1000),
-    );
-    res = await fetch(url, { headers });
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(
-      `Companies House ${res.status} ${res.statusText}: ${body.slice(0, 500)}`,
-    );
-  }
-  return res;
 }
 
 async function fetchAllPages(

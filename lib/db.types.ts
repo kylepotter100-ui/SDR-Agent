@@ -78,6 +78,7 @@ export interface Database {
           ranking_reasoning: string | null;
           status: ProspectStatus;
           surfaced_in_digest_at: string | null;
+          apollo_attempted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -105,6 +106,7 @@ export interface Database {
           ranking_reasoning?: string | null;
           status?: ProspectStatus;
           surfaced_in_digest_at?: string | null;
+          apollo_attempted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -132,6 +134,7 @@ export interface Database {
           ranking_reasoning?: string | null;
           status?: ProspectStatus;
           surfaced_in_digest_at?: string | null;
+          apollo_attempted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
