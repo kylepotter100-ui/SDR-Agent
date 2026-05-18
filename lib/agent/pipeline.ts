@@ -27,7 +27,7 @@ import { enrich } from "@/lib/agent/enrich";
 import { enrichWithApollo } from "@/lib/agent/apollo";
 import { personalise } from "@/lib/agent/personalise";
 import { rank } from "@/lib/agent/rank";
-import { digest } from "@/lib/agent/digest";
+import { digest, type PipelineContext } from "@/lib/agent/digest";
 
 export type StageName =
   | "discover"
@@ -60,15 +60,6 @@ export interface PipelineResult {
   cronRunId: string | null;
 }
 
-const STAGE_RUNNERS: Record<StageName, () => Promise<unknown>> = {
-  discover,
-  enrich,
-  apollo: enrichWithApollo,
-  personalise,
-  rank,
-  digest: async () => digest({ dryRun: false }),
-};
-
 /**
  * Stages that abort the whole pipeline on failure. Rank failure means
  * we can't usefully send a digest, so we skip the rest.
@@ -85,10 +76,118 @@ function extractCostGbp(summary: unknown): number {
   return typeof v === "number" ? v : 0;
 }
 
-async function runStage(name: StageName): Promise<StageResult> {
+/**
+ * Fetch the most recent prepare cron_runs row within the lookback
+ * window. Used by the digest stage so the emailed pipeline summary
+ * can reflect discover / enrich / apollo / personalise counts.
+ */
+async function loadRecentPrepareSummary(
+  withinMs: number = 60 * 60 * 1000,
+): Promise<unknown> {
+  const since = new Date(Date.now() - withinMs).toISOString();
+  const result = await db()
+    .from("cron_runs")
+    .select("summary")
+    .eq("kind", "prepare")
+    .gt("started_at", since)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (result.error || !result.data) return null;
+  return result.data.summary;
+}
+
+function readStageSummary(
+  prepareSummary: unknown,
+  name: StageName,
+): unknown {
+  if (!isRecord(prepareSummary)) return undefined;
+  const stages = prepareSummary.stages;
+  if (!Array.isArray(stages)) return undefined;
+  const entry = stages.find(
+    (s): s is { name: string; summary: unknown } =>
+      isRecord(s) && s.name === name,
+  );
+  return entry?.summary;
+}
+
+async function runStage(
+  name: StageName,
+  priorStages: StageResult[],
+  kind: CronKind,
+): Promise<StageResult> {
   const startedAt = Date.now();
   try {
-    const summary = await STAGE_RUNNERS[name]();
+    let summary: unknown;
+    switch (name) {
+      case "discover":
+        summary = await discover();
+        break;
+      case "enrich":
+        summary = await enrich();
+        break;
+      case "apollo":
+        summary = await enrichWithApollo();
+        break;
+      case "personalise":
+        summary = await personalise();
+        break;
+      case "rank":
+        summary = await rank();
+        break;
+      case "digest": {
+        const rankResult = priorStages.find((s) => s.name === "rank");
+        // In the manual / full pipeline, prepare-equivalent stages
+        // ran in-process and we read their summaries from
+        // priorStages. In the digest cron, prepare ran in a separate
+        // function invocation; fetch its row from cron_runs.
+        const prepareInline =
+          kind === "manual"
+            ? priorStages.reduce<Record<string, unknown>>((acc, s) => {
+                if (
+                  s.name === "discover" ||
+                  s.name === "enrich" ||
+                  s.name === "apollo" ||
+                  s.name === "personalise"
+                ) {
+                  acc[s.name] = s.summary;
+                }
+                return acc;
+              }, {})
+            : null;
+        const prepareFromDb =
+          prepareInline === null ? await loadRecentPrepareSummary() : null;
+        const prepare = prepareInline ?? {
+          discover: readStageSummary(prepareFromDb, "discover"),
+          enrich: readStageSummary(prepareFromDb, "enrich"),
+          apollo: readStageSummary(prepareFromDb, "apollo"),
+          personalise: readStageSummary(prepareFromDb, "personalise"),
+        };
+        const failedStages = priorStages
+          .filter((s) => s.status === "failed")
+          .map((s) => s.name);
+        const totalCostGbp = Number(
+          (
+            priorStages.reduce(
+              (acc, s) => acc + extractCostGbp(s.summary),
+              0,
+            ) +
+            (isRecord(prepareFromDb) &&
+            typeof prepareFromDb.totalCostGbp === "number"
+              ? prepareFromDb.totalCostGbp
+              : 0)
+          ).toFixed(4),
+        );
+        const pipelineContext: PipelineContext = {
+          prepare,
+          rank: rankResult?.summary,
+          totalCostGbp,
+          failedStages,
+        };
+        summary = await digest({ dryRun: false, pipelineContext });
+        break;
+      }
+    }
     const durationMs = Date.now() - startedAt;
     console.log(
       `[pipeline] ${name} ok (${durationMs}ms, cost £${extractCostGbp(summary).toFixed(3)})`,
@@ -160,7 +259,7 @@ async function runStages(
   const results: StageResult[] = [];
 
   for (const name of stages) {
-    const result = await runStage(name);
+    const result = await runStage(name, results, kind);
     results.push(result);
     if (result.status === "failed" && HARD_ABORT_ON_FAIL.has(name)) {
       console.error(
