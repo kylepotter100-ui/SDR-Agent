@@ -171,6 +171,39 @@ export interface Database {
         };
         Relationships: [];
       };
+      cron_runs: {
+        Row: {
+          id: string;
+          started_at: string;
+          finished_at: string | null;
+          kind: "prepare" | "digest" | "manual";
+          status: "ok" | "partial" | "failed";
+          summary: Json;
+          errors: Json | null;
+          duration_ms: number | null;
+        };
+        Insert: {
+          id?: string;
+          started_at: string;
+          finished_at?: string | null;
+          kind: "prepare" | "digest" | "manual";
+          status: "ok" | "partial" | "failed";
+          summary: Json;
+          errors?: Json | null;
+          duration_ms?: number | null;
+        };
+        Update: {
+          id?: string;
+          started_at?: string;
+          finished_at?: string | null;
+          kind?: "prepare" | "digest" | "manual";
+          status?: "ok" | "partial" | "failed";
+          summary?: Json;
+          errors?: Json | null;
+          duration_ms?: number | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
