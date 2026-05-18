@@ -17,6 +17,8 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { claude, SONNET_MODEL_ID } from "@/lib/anthropic";
@@ -30,6 +32,11 @@ import { POSTCODE_PREFIXES, type PostcodePrefix } from "@/lib/config";
 const MAX_PERSONALISE_PER_RUN = 10;
 const MAX_OUTPUT_TOKENS = 1024;
 
+const PersonalisedEmailSchema = z.object({
+  subject: z.string().min(1),
+  body: z.string().min(1),
+});
+
 // Sonnet 4.6 list pricing — USD per million tokens.
 const PRICE_USD_PER_M_INPUT = 3;
 const PRICE_USD_PER_M_CACHE_READ = 0.3;
@@ -38,7 +45,7 @@ const PRICE_USD_PER_M_OUTPUT = 15;
 const USD_TO_GBP = 0.79;
 
 interface PersonalisationErrorRecord {
-  stage: "anthropic" | "parse" | "db_update";
+  stage: "anthropic" | "db_update";
   company_number: string;
   company_name: string;
   status?: number;
@@ -49,7 +56,6 @@ export interface PersonalisationSummary {
   considered: number;
   processed: number;
   failedAnthropic: number;
-  failedParse: number;
   failedDb: number;
   hitCap: boolean;
   byPostcode: Record<string, number>;
@@ -86,27 +92,19 @@ function extractPrefix(
     : null;
 }
 
-function parsePersonalisedEmail(
-  raw: string,
-): { subject: string; body: string } {
-  // Models occasionally wrap JSON in code fences; strip if present.
-  const trimmed = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
-  const parsed = JSON.parse(trimmed) as unknown;
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof (parsed as Record<string, unknown>).subject !== "string" ||
-    typeof (parsed as Record<string, unknown>).body !== "string"
-  ) {
-    throw new Error(
-      "Response did not match {subject: string, body: string}",
-    );
-  }
-  const { subject, body } = parsed as { subject: string; body: string };
-  if (!subject.trim() || !body.trim()) {
-    throw new Error("Response had empty subject or body");
-  }
-  return { subject, body };
+const SIGN_OFF = "Kyle Potter — KP Solutions";
+const SIGN_OFF_PATTERN = /Kyle Potter\s*[—–-]\s*KP Solutions\.?\s*$/;
+
+/**
+ * Belt-and-braces with the prompt's hard constraint. If Sonnet drops
+ * the sign-off (observed in 3 of 6 emails on the v0 prompt), append
+ * the canonical form. Recognises common variants — em/en/hyphen,
+ * trailing period — so we don't duplicate.
+ */
+function ensureSignOff(body: string): string {
+  const trimmed = body.trimEnd();
+  if (SIGN_OFF_PATTERN.test(trimmed)) return trimmed;
+  return `${trimmed}\n\n${SIGN_OFF}`;
 }
 
 function logSoftConstraints(
@@ -115,9 +113,9 @@ function logSoftConstraints(
   body: string,
 ): void {
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
-  if (wordCount < 80 || wordCount > 120) {
+  if (wordCount < 60 || wordCount > 120) {
     console.warn(
-      `[personalise] ${companyNumber}: body word count ${wordCount} outside 80-120`,
+      `[personalise] ${companyNumber}: body word count ${wordCount} outside 60-120`,
     );
   }
   if (subject.split(/\s+/).filter(Boolean).length > 7) {
@@ -152,7 +150,6 @@ export async function personalise(): Promise<PersonalisationSummary> {
 
   let processed = 0;
   let failedAnthropic = 0;
-  let failedParse = 0;
   let failedDb = 0;
   let inputTokens = 0;
   let cacheReadTokens = 0;
@@ -172,8 +169,6 @@ export async function personalise(): Promise<PersonalisationSummary> {
         ? record.status !== undefined
           ? `anthropic_${record.status}`
           : "network"
-        : record.stage === "parse"
-        ? "parse"
         : "db_update";
     errorsByBucket[bucket] = (errorsByBucket[bucket] ?? 0) + 1;
     if (errorExamples.length < 5) errorExamples.push(record);
@@ -194,13 +189,17 @@ export async function personalise(): Promise<PersonalisationSummary> {
       incorporated_on: prospect.incorporated_on,
     };
 
-    let rawText: string;
+    let subject: string;
+    let body: string;
     try {
-      const response = await claude().messages.create({
+      const response = await claude().messages.parse({
         model: SONNET_MODEL_ID,
         max_tokens: MAX_OUTPUT_TOKENS,
         thinking: { type: "disabled" },
-        output_config: { effort: "medium" },
+        output_config: {
+          effort: "medium",
+          format: zodOutputFormat(PersonalisedEmailSchema),
+        },
         system: [
           {
             type: "text",
@@ -220,11 +219,12 @@ export async function personalise(): Promise<PersonalisationSummary> {
       cacheCreationTokens += response.usage.cache_creation_input_tokens ?? 0;
       outputTokens += response.usage.output_tokens;
 
-      const textBlock = response.content.find((b) => b.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        throw new Error("Response contained no text block");
+      if (!response.parsed_output) {
+        throw new Error(
+          `Structured output unavailable (stop_reason=${response.stop_reason})`,
+        );
       }
-      rawText = textBlock.text;
+      ({ subject, body } = response.parsed_output);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const status =
@@ -243,27 +243,8 @@ export async function personalise(): Promise<PersonalisationSummary> {
       continue;
     }
 
-    let subject: string;
-    let body: string;
-    try {
-      ({ subject, body } = parsePersonalisedEmail(rawText));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[personalise] skip ${prospect.company_number}: parse failed — ${message}`,
-      );
-      console.warn(`[personalise] raw response: ${rawText.slice(0, 500)}`);
-      recordError({
-        stage: "parse",
-        company_number: prospect.company_number,
-        company_name: prospect.company_name,
-        message,
-      });
-      failedParse++;
-      continue;
-    }
-
     logSoftConstraints(prospect.company_number, subject, body);
+    body = ensureSignOff(body);
 
     const upd = await db()
       .from("prospects")
@@ -309,7 +290,6 @@ export async function personalise(): Promise<PersonalisationSummary> {
     considered,
     processed,
     failedAnthropic,
-    failedParse,
     failedDb,
     hitCap,
     byPostcode,

@@ -37,18 +37,20 @@ Recent case study to reference when credibility is needed: The Potter Sanctuary 
 Voice: confident, considered, plain. Short sentences when the point is sharp. No marketing hype, no exclamation marks, no emojis. UK English throughout ("personalisation" not "personalization", "organisation" not "organization", "behaviour" not "behavior"). The email should sound like Kyle typed it after looking at the prospect's website or Facebook page for ninety seconds — specific and human, never templated.
 
 Hard constraints:
-- 80 to 120 words in the body (subject line excluded)
+- 60 to 120 words in the body (subject line excluded). When the prospect record genuinely has little to say about — for example, a very new business with only a company name, SIC code, and incorporation date — write a shorter email. A 60-80 word email that says only what's true is better than a 100-word email that fills space with industry speculation. Favour brevity over filler.
 - Plain text. No HTML, no markdown formatting, no bullet points
 - Open with anything except "I" — start with "Saw...", "Noticed...", "Your...", "Quick thought...", or similar
 - Include ONE specific observation about the prospect that proves you looked at their actual business — not a generic compliment
 - Ground your specific observation ONLY in the following five fields from the prospect record: company name, location, SIC description, incorporation date, and website/Google Maps status. Do NOT speculate about the business's premises, branding, social media presence, specific services, owner background, or anything else not present in the record. If you find yourself writing about something you don't actually know — stop and ground it in one of the five permitted fields instead.
+- Do NOT name specific competitor products, platforms, or services that the prospect might be using (e.g. Clubspark, Playtomic, Airbnb, Booking.com, Calendly, Mindbody, Acuity, Square). You have not observed which platforms they use. If you want to gesture at the alternative to a custom build, say "generic booking platforms" or "off-the-shelf tools" — never name a specific product.
+- Do NOT describe or speculate about the prospect's current setup, workflow, or how they handle things today. You have not observed any of this. They may not even have a current setup — they may be brand new. Write only about what the record shows. Phrases like "stop wrestling with...", "instead of patching together...", "without relying on a third-party platform taking a cut", or any other description of their imagined current state are forbidden.
 - Include ONE soft credibility line referencing the Sanctuary build. Keep it honest — do not invent metrics. Acceptable: "we recently built a similar system for a Loughborough pottery studio." Not acceptable: "we increased their bookings by 47%."
 - Include ONE soft CTA: either a single yes/no question OR a 15-minute chat ask. Never both. Never a calendar link in the first touch.
 - Subject line: 4 to 7 words. No question marks unless the email body is itself a question. No clickbait. Never use "quick question", "circling back", "touching base", or similar.
-- Sign off with "Kyle Potter — KP Solutions" on its own line. No further footer, no phone number.
+- Sign off with "Kyle Potter — KP Solutions" on its own line. The body MUST end with this exact sign-off, followed by nothing else.
 - Banned words and phrases: "leverage", "solution", "synergy", "innovative", "cutting-edge", "I hope this finds you well", "I trust you're well", "circle back", "touch base", "your beautiful [anything]", "your stunning [anything]", "your lovely [anything]", "love what you're doing", "saw your Instagram", "saw your Facebook post", "came across your page", "came across your listing"
 
-Output format: a JSON object with exactly two keys, "subject" and "body". The body uses "\\n\\n" between paragraphs. No other keys, no preamble, no commentary.`;
+Output format: a JSON object with exactly two keys, "subject" and "body". The body uses "\\n\\n" between paragraphs.`;
 
 function websiteStatusLine(ctx: PersonalisationContext): string {
   if (ctx.has_website === true && ctx.website_url) {
