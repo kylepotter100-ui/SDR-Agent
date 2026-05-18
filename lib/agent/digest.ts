@@ -56,6 +56,7 @@ export interface DigestSummary {
   considered: number;
   sent: number;
   dryRun: boolean;
+  skippedRecentSend: boolean;
   sentAt: string | null;
   digestId: string | null;
   messageId: string | null;
@@ -230,6 +231,7 @@ export async function digest(
       considered: 0,
       sent: 0,
       dryRun,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -248,6 +250,7 @@ export async function digest(
       considered,
       sent: 0,
       dryRun,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -264,6 +267,7 @@ export async function digest(
       considered,
       sent: 0,
       dryRun: true,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -271,6 +275,39 @@ export async function digest(
       weekOfDate: week,
       subject,
       html,
+      errors: { byBucket: errorsByBucket, examples: errorExamples },
+    };
+  }
+
+  // Double-fire lock: if a digest sent in the last hour, skip rather
+  // than risk duplicate inbox delivery on a Vercel Cron retry.
+  const recentSend = await db()
+    .from("digests")
+    .select("id, sent_at")
+    .gt(
+      "sent_at",
+      new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    )
+    .limit(1);
+  if (recentSend.error) {
+    console.warn(
+      `[digest] recent-send lookup failed (${recentSend.error.message}); continuing`,
+    );
+  } else if (recentSend.data && recentSend.data.length > 0) {
+    console.log(
+      `[digest] skipping: a digest sent within the last hour (id=${recentSend.data[0].id})`,
+    );
+    return {
+      considered,
+      sent: 0,
+      dryRun: false,
+      skippedRecentSend: true,
+      sentAt: null,
+      digestId: null,
+      messageId: null,
+      surfacedProspectIds: [],
+      weekOfDate: week,
+      subject,
       errors: { byBucket: errorsByBucket, examples: errorExamples },
     };
   }
@@ -295,6 +332,7 @@ export async function digest(
       considered,
       sent: 0,
       dryRun: false,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -343,6 +381,7 @@ export async function digest(
     considered,
     sent: prospects.length,
     dryRun: false,
+    skippedRecentSend: false,
     sentAt,
     digestId,
     messageId,

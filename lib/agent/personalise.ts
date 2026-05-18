@@ -29,7 +29,7 @@ import {
 } from "@/lib/prompts/personalise";
 import { POSTCODE_PREFIXES, type PostcodePrefix } from "@/lib/config";
 
-const MAX_PERSONALISE_PER_RUN = 10;
+const MAX_PERSONALISE_PER_RUN = 25;
 const MAX_OUTPUT_TOKENS = 1024;
 
 const PersonalisedEmailSchema = z.object({
