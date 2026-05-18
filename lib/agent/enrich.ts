@@ -58,6 +58,25 @@ interface MapsOutcome {
   observable_signal: string;
 }
 
+interface EnrichErrorRecord {
+  stage: "places" | "insert";
+  company_number: string;
+  company_name: string;
+  status?: number;
+  message: string;
+}
+
+class PlacesError extends Error {
+  status: number;
+  bodySnippet: string;
+  constructor(status: number, statusText: string, bodySnippet: string) {
+    super(`Google Places ${status} ${statusText}: ${bodySnippet}`);
+    this.name = "PlacesError";
+    this.status = status;
+    this.bodySnippet = bodySnippet;
+  }
+}
+
 export interface EnrichSummary {
   considered: number;
   enriched: number;
@@ -70,6 +89,10 @@ export interface EnrichSummary {
   mapsListedNoWebsite: number;
   byPostcode: Record<string, number>;
   estimatedCostGbp: number;
+  errors: {
+    byBucket: Record<string, number>;
+    examples: EnrichErrorRecord[];
+  };
   sample: Array<{
     company_number: string;
     company_name: string;
@@ -164,15 +187,29 @@ async function searchPlace(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `Google Places ${res.status} ${res.statusText}: ${text.slice(0, 500)}`,
-    );
+    throw new PlacesError(res.status, res.statusText, text.slice(0, 500));
   }
   return (await res.json()) as PlacesSearchResponse;
 }
 
-function mapPlacesResponse(resp: PlacesSearchResponse): MapsOutcome {
-  const place = resp.places?.[0];
+function extractOutwardCode(postcode: string | undefined | null): string | null {
+  if (!postcode) return null;
+  const match = postcode
+    .toUpperCase()
+    .match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/);
+  return match ? match[1] : null;
+}
+
+function mapPlacesResponse(
+  resp: PlacesSearchResponse,
+  expectedOutward: string | null,
+): MapsOutcome {
+  const places = resp.places ?? [];
+  const place = expectedOutward
+    ? places.find(
+        (p) => extractOutwardCode(p.formattedAddress) === expectedOutward,
+      ) ?? null
+    : null;
   if (!place) {
     return {
       has_website: null,
@@ -256,6 +293,19 @@ export async function enrich(): Promise<EnrichSummary> {
     POSTCODE_PREFIXES.map((p) => [p, 0]),
   );
   const sample: EnrichSummary["sample"] = [];
+  const errorsByBucket: Record<string, number> = {};
+  const errorExamples: EnrichErrorRecord[] = [];
+
+  const recordError = (record: EnrichErrorRecord) => {
+    const bucket =
+      record.stage === "insert"
+        ? "insert"
+        : record.status !== undefined
+        ? `places_${record.status}`
+        : "network";
+    errorsByBucket[bucket] = (errorsByBucket[bucket] ?? 0) + 1;
+    if (errorExamples.length < 5) errorExamples.push(record);
+  };
 
   for (const { company_number, raw } of batch) {
     const sic = pickBestSic(raw.sic_codes);
@@ -279,16 +329,25 @@ export async function enrich(): Promise<EnrichSummary> {
     }
 
     const town = townForQuery(addr);
+    const expectedOutward = extractOutwardCode(postcode);
     let outcome: MapsOutcome;
     try {
       lookupCalls++;
       const resp = await searchPlace(raw.company_name, town);
-      outcome = mapPlacesResponse(resp);
+      outcome = mapPlacesResponse(resp, expectedOutward);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const status = err instanceof PlacesError ? err.status : undefined;
       console.warn(
-        `[enrich] skip ${company_number} (${raw.company_name}): Places lookup failed — ${message}`,
+        `[enrich] skip ${company_number} (${raw.company_name}): ${message}`,
       );
+      recordError({
+        stage: "places",
+        company_number,
+        company_name: raw.company_name,
+        status,
+        message,
+      });
       skippedError++;
       continue;
     }
@@ -315,6 +374,12 @@ export async function enrich(): Promise<EnrichSummary> {
       console.warn(
         `[enrich] skip ${company_number}: prospect insert failed — ${insert.error.message}`,
       );
+      recordError({
+        stage: "insert",
+        company_number,
+        company_name: raw.company_name,
+        message: insert.error.message,
+      });
       skippedError++;
       continue;
     }
@@ -353,6 +418,10 @@ export async function enrich(): Promise<EnrichSummary> {
     mapsListedNoWebsite,
     byPostcode,
     estimatedCostGbp: Number((lookupCalls * COST_PER_LOOKUP_GBP).toFixed(3)),
+    errors: {
+      byBucket: errorsByBucket,
+      examples: errorExamples,
+    },
     sample,
   };
 
