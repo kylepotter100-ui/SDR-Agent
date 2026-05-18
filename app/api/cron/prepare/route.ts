@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { requireCronAuth } from "@/lib/cron-auth";
-import { runDigest } from "@/lib/agent/pipeline";
+import { runPrepare } from "@/lib/agent/pipeline";
 
 /**
- * Weekly digest cron endpoint.
+ * Weekly prepare cron endpoint.
  *
- * Hit by Vercel Cron at 07:00 UTC every Monday (08:00 BST). Runs the
- * rank + digest stages of the pipeline; prepare ran 30 minutes earlier
- * at /api/cron/prepare. Reads the most recent prepare cron_runs row
- * within the last 60 minutes to compose the digest email's pipeline
- * summary footer.
+ * Hit by Vercel Cron at 06:30 UTC every Monday — 30 minutes before
+ * the digest cron. Runs the discover -> enrich -> apollo ->
+ * personalise stages of the pipeline and writes a cron_runs row so
+ * the digest cron can read its outputs to compose the email footer.
  *
  * Vercel Cron sends GET; we accept both GET and POST so the manual
  * curl pattern works too.
@@ -24,11 +23,11 @@ async function handle(request: Request) {
   const denied = requireCronAuth(request);
   if (denied) return denied;
   try {
-    const result = await runDigest();
+    const result = await runPrepare();
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[cron/weekly-digest] failed", message);
+    console.error("[cron/prepare] failed", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
