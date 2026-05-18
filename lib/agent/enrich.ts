@@ -192,8 +192,24 @@ async function searchPlace(
   return (await res.json()) as PlacesSearchResponse;
 }
 
-function mapPlacesResponse(resp: PlacesSearchResponse): MapsOutcome {
-  const place = resp.places?.[0];
+function extractOutwardCode(postcode: string | undefined | null): string | null {
+  if (!postcode) return null;
+  const match = postcode
+    .toUpperCase()
+    .match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/);
+  return match ? match[1] : null;
+}
+
+function mapPlacesResponse(
+  resp: PlacesSearchResponse,
+  expectedOutward: string | null,
+): MapsOutcome {
+  const places = resp.places ?? [];
+  const place = expectedOutward
+    ? places.find(
+        (p) => extractOutwardCode(p.formattedAddress) === expectedOutward,
+      ) ?? null
+    : null;
   if (!place) {
     return {
       has_website: null,
@@ -313,11 +329,12 @@ export async function enrich(): Promise<EnrichSummary> {
     }
 
     const town = townForQuery(addr);
+    const expectedOutward = extractOutwardCode(postcode);
     let outcome: MapsOutcome;
     try {
       lookupCalls++;
       const resp = await searchPlace(raw.company_name, town);
-      outcome = mapPlacesResponse(resp);
+      outcome = mapPlacesResponse(resp, expectedOutward);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const status = err instanceof PlacesError ? err.status : undefined;
