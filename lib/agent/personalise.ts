@@ -93,18 +93,30 @@ function extractPrefix(
 }
 
 const SIGN_OFF = "Kyle Potter — KP Solutions";
-const SIGN_OFF_PATTERN = /Kyle Potter\s*[—–-]\s*KP Solutions\.?\s*$/;
+const OPT_OUT = "Reply STOP if you'd prefer not to receive further messages.";
+
+// Match any line containing the sign-off (em/en/hyphen, optional
+// trailing period), with optional surrounding whitespace.
+const SIGN_OFF_LINE = /^[ \t]*Kyle Potter\s*[—–-]\s*KP Solutions\.?[ \t]*\r?\n?/gm;
+// Match any line containing "Reply STOP" — whatever exact phrasing the
+// model used; we replace it with the canonical opt-out string anyway.
+const OPT_OUT_LINE = /^[ \t]*Reply STOP[^\n]*\r?\n?/gim;
 
 /**
- * Belt-and-braces with the prompt's hard constraint. If Sonnet drops
- * the sign-off (observed in 3 of 6 emails on the v0 prompt), append
- * the canonical form. Recognises common variants — em/en/hyphen,
- * trailing period — so we don't duplicate.
+ * Belt-and-braces with the prompt's hard constraints. Strips any
+ * existing copies of the opt-out and sign-off lines from the body
+ * (wherever the model placed them) and appends both in canonical
+ * order: blank line, opt-out, blank line, sign-off. Recognises common
+ * sign-off variants — em/en/hyphen, trailing period — so we don't
+ * duplicate when the model gets the punctuation right but the
+ * separator wrong.
  */
-function ensureSignOff(body: string): string {
-  const trimmed = body.trimEnd();
-  if (SIGN_OFF_PATTERN.test(trimmed)) return trimmed;
-  return `${trimmed}\n\n${SIGN_OFF}`;
+function ensureClosing(body: string): string {
+  const stripped = body
+    .replace(SIGN_OFF_LINE, "")
+    .replace(OPT_OUT_LINE, "")
+    .trimEnd();
+  return `${stripped}\n\n${OPT_OUT}\n\n${SIGN_OFF}`;
 }
 
 function logSoftConstraints(
@@ -244,7 +256,7 @@ export async function personalise(): Promise<PersonalisationSummary> {
     }
 
     logSoftConstraints(prospect.company_number, subject, body);
-    body = ensureSignOff(body);
+    body = ensureClosing(body);
 
     const upd = await db()
       .from("prospects")
