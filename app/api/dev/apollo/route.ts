@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { enrichWithApollo } from "@/lib/agent/apollo";
+import { requireCronAuth } from "@/lib/cron-auth";
 
 /**
  * Manual spot-check endpoint for the Apollo enrichment module.
@@ -13,17 +14,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) {
-    return NextResponse.json(
-      { error: "Server misconfigured: CRON_SECRET not set" },
-      { status: 500 },
-    );
-  }
-  const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${expected}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCronAuth(request);
+  if (denied) return denied;
 
   try {
     const summary = await enrichWithApollo();

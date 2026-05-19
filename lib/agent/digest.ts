@@ -56,6 +56,7 @@ export interface DigestSummary {
   considered: number;
   sent: number;
   dryRun: boolean;
+  skippedRecentSend: boolean;
   sentAt: string | null;
   digestId: string | null;
   messageId: string | null;
@@ -156,16 +157,85 @@ function prospectBlock(p: ProspectForDigest, index: number): string {
 </div>`;
 }
 
-function renderHtml(prospects: ProspectForDigest[], week: string): string {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readNumber(value: unknown, key: string): number | null {
+  if (!isRecord(value)) return null;
+  const v = value[key];
+  return typeof v === "number" ? v : null;
+}
+
+/**
+ * Compose the small italic footer block summarising the week's
+ * pipeline activity. Reads numeric counts and per-stage costs from
+ * the orchestrator-provided context; missing fields are rendered as
+ * em-dashes rather than zeros so absence is visible.
+ */
+function pipelineSummaryBlock(context: PipelineContext | undefined): string {
+  if (!context) return "";
+  const discoverCount = readNumber(context.prepare?.discover, "qualified");
+  const enrichCount = readNumber(context.prepare?.enrich, "enriched");
+  const apolloProcessed = readNumber(context.prepare?.apollo, "processed");
+  const apolloConsidered = readNumber(context.prepare?.apollo, "considered");
+  const personaliseCount = readNumber(
+    context.prepare?.personalise,
+    "processed",
+  );
+  const rankCount = readNumber(context.rank, "ranked");
+
+  const parts: string[] = [];
+  parts.push(
+    discoverCount !== null
+      ? `${discoverCount} new prospects discovered`
+      : "discover —",
+  );
+  parts.push(
+    enrichCount !== null ? `${enrichCount} enriched` : "enrich —",
+  );
+  if (apolloConsidered !== null && apolloConsidered === 0) {
+    parts.push("0 Apollo lookups (paused)");
+  } else if (apolloProcessed !== null) {
+    parts.push(`${apolloProcessed} Apollo lookups`);
+  } else {
+    parts.push("apollo —");
+  }
+  parts.push(
+    personaliseCount !== null
+      ? `${personaliseCount} personalised`
+      : "personalise —",
+  );
+  parts.push(rankCount !== null ? `${rankCount} ranked` : "rank —");
+
+  const cost = context.totalCostGbp;
+  parts.push(`this week's API cost £${cost.toFixed(2)}`);
+
+  const failures = context.failedStages ?? [];
+  const failureNote =
+    failures.length > 0
+      ? ` <span style="color:#a04000;">(${failures.join(", ")} failed — see Vercel logs)</span>`
+      : "";
+
+  return `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:13px;color:#777;font-style:italic;line-height:1.5;">Pipeline summary: ${parts.join(" · ")}.${failureNote}</div>`;
+}
+
+function renderHtml(
+  prospects: ProspectForDigest[],
+  week: string,
+  context: PipelineContext | undefined,
+): string {
   const header = `<div style="margin-bottom:24px;">
   <div style="font-size:22px;font-weight:700;color:#111;">KP Prospect Digest</div>
   <div style="font-size:14px;color:#555;margin-top:4px;">Week of ${week} · ${prospects.length} prospect${prospects.length === 1 ? "" : "s"} ranked</div>
 </div>`;
   const blocks = prospects.map((p, i) => prospectBlock(p, i)).join("\n");
+  const footer = pipelineSummaryBlock(context);
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KP Prospect Digest</title></head><body style="margin:0;padding:0;background:#fafafa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111;">
 <div style="max-width:600px;margin:0 auto;padding:24px 16px;background:#ffffff;font-size:16px;line-height:1.5;">
 ${header}
 ${blocks}
+${footer}
 </div>
 </body></html>`;
 }
@@ -200,14 +270,35 @@ async function countConsidered(): Promise<number> {
   return result.count ?? 0;
 }
 
+/**
+ * Optional pipeline context supplied by the cron orchestrator so the
+ * digest email can render a per-week summary footer. Each field is
+ * the raw stage `summary` from lib/agent/pipeline.ts (kept as unknown
+ * here because importing the StageResult type would cycle the agent
+ * modules; the renderer pulls fields defensively).
+ */
+export interface PipelineContext {
+  prepare?: {
+    discover?: unknown;
+    enrich?: unknown;
+    apollo?: unknown;
+    personalise?: unknown;
+  };
+  rank?: unknown;
+  totalCostGbp: number;
+  failedStages?: string[];
+}
+
 export interface DigestOptions {
   dryRun?: boolean;
+  pipelineContext?: PipelineContext;
 }
 
 export async function digest(
   options: DigestOptions = {},
 ): Promise<DigestSummary> {
   const dryRun = options.dryRun ?? false;
+  const pipelineContext = options.pipelineContext;
   const errorsByBucket: Record<string, number> = {};
   const errorExamples: DigestErrorRecord[] = [];
   const recordError = (record: DigestErrorRecord) => {
@@ -230,6 +321,7 @@ export async function digest(
       considered: 0,
       sent: 0,
       dryRun,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -241,13 +333,14 @@ export async function digest(
   }
 
   const subject = `KP Prospect Digest — ${week} — ${prospects.length} prospects ranked`;
-  const html = renderHtml(prospects, week);
+  const html = renderHtml(prospects, week, pipelineContext);
 
   if (prospects.length === 0) {
     return {
       considered,
       sent: 0,
       dryRun,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -264,6 +357,7 @@ export async function digest(
       considered,
       sent: 0,
       dryRun: true,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -271,6 +365,39 @@ export async function digest(
       weekOfDate: week,
       subject,
       html,
+      errors: { byBucket: errorsByBucket, examples: errorExamples },
+    };
+  }
+
+  // Double-fire lock: if a digest sent in the last hour, skip rather
+  // than risk duplicate inbox delivery on a Vercel Cron retry.
+  const recentSend = await db()
+    .from("digests")
+    .select("id, sent_at")
+    .gt(
+      "sent_at",
+      new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    )
+    .limit(1);
+  if (recentSend.error) {
+    console.warn(
+      `[digest] recent-send lookup failed (${recentSend.error.message}); continuing`,
+    );
+  } else if (recentSend.data && recentSend.data.length > 0) {
+    console.log(
+      `[digest] skipping: a digest sent within the last hour (id=${recentSend.data[0].id})`,
+    );
+    return {
+      considered,
+      sent: 0,
+      dryRun: false,
+      skippedRecentSend: true,
+      sentAt: null,
+      digestId: null,
+      messageId: null,
+      surfacedProspectIds: [],
+      weekOfDate: week,
+      subject,
       errors: { byBucket: errorsByBucket, examples: errorExamples },
     };
   }
@@ -295,6 +422,7 @@ export async function digest(
       considered,
       sent: 0,
       dryRun: false,
+      skippedRecentSend: false,
       sentAt: null,
       digestId: null,
       messageId: null,
@@ -343,6 +471,7 @@ export async function digest(
     considered,
     sent: prospects.length,
     dryRun: false,
+    skippedRecentSend: false,
     sentAt,
     digestId,
     messageId,
