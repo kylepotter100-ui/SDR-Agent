@@ -56,6 +56,8 @@ This brief was first written before Phase 1 existed. Phase 1 reality differs fro
 - Digest history archive (reads existing `digests`)
 - Pipeline-health view (reads existing `cron_runs`)
 - Status-transition audit log (`prospect_status_transitions`)
+- **Filed-accounts surface** — when Companies House has filed accounts for a prospect, show turnover / profit / key financials in the detail view (sparse for new businesses, valuable when present; informs pricing + qualification)
+- **Director portfolio signal** — count of the director's other appointments and whether those companies have filed accounts (proxies for "serial operator with scale"; informs pricing positioning)
 
 ## What this phase explicitly does NOT build
 
@@ -234,7 +236,13 @@ Six checkpoints, same discipline as Phase 1: small reviewable units, one feature
 
 **CP6 — Home, digest history, pipeline health.** The overview with the three focus lists; digest archive with current-status overlay; cron-health view. *Review: home reads as a useful Monday-morning operational glance; digest history shows status drift; pipeline-health surfaces the last run's cost + status.*
 
-**CP7 (stretch / Phase 2.5) — Ranker preference feedback.** Feed status transitions into the weekly Opus ranking prompt ("Kyle qualified these, ignored those — here's the pattern"). Deferred and data-dependent; only worth doing once there's real transition history. Not committed in the Phase 2 week.
+**CP7 — Companies House financial + portfolio signals.** Two new read-only data surfaces on the prospect detail view, both pulled live from Companies House when the page loads (no new cron stage, no storage — CH's 600-req/5-min limit is generous and these are on-demand, one-prospect-at-a-time reads):
+- *Filed accounts* — `GET /company/{number}/filing-history` and `/company/{number}/accounts` for turnover / profit / key financials when present. Sparse for fresh incorporations (most of our pool), valuable when a prospect has trading history. Informs pricing + qualification.
+- *Director portfolio* — `GET /officers/{officer_id}/appointments` for the count of the director's other appointments and whether those companies have filed accounts. Proxies for "serial operator with scale" and informs pricing positioning. Shown next to the director name.
+
+The Companies House client (`lib/companies-house.ts`) gains two helpers for these endpoints. Fetching is on-demand and failure-tolerant — a CH hiccup degrades these panels to "unavailable", never blocks the detail view. Flagged: officer_id comes from the officers payload (CP5/Phase-1 officers lookup), so for prospects where we never resolved an officer_id the portfolio panel shows "director not resolved".
+
+**CP8 (stretch / Phase 2.5) — Ranker preference feedback.** Feed status transitions into the weekly Opus ranking prompt ("Kyle qualified these, ignored those — here's the pattern"). Deferred and data-dependent; only worth doing once there's real transition history. Not committed in the Phase 2 week.
 
 ---
 
@@ -254,3 +262,12 @@ Six checkpoints, same discipline as Phase 1: small reviewable units, one feature
 ## Where Phase 3 picks up
 
 Phase 3 adds the automated **send** and **reply detection** that Phase 2 does manually. The detail page's copyable draft gains a "Send via Outlook" action (Microsoft Graph OAuth); `prospect_sends` rows start being written by the system instead of by Kyle's "mark sent"; `prospect_replies` start being populated by Graph inbox subscriptions instead of manual logging; the suppression list built in Phase 2 becomes the hard gate on automated sends. The manual scaffolding from Phase 2 is the fallback and the data model both phases share.
+
+**Sequencing note (post strategic update):** Kyle is now building the full system before any outreach — no manual sends. Phase 2 and Phase 3 run back-to-back; Phase 3 is proposed immediately after Phase 2's CP6 lands rather than pausing for "real reply data" (the data will come from automated sending, not manual). The Phase 2 manual send/reply scaffolding (`prospect_sends`, `prospect_replies`, the "mark sent" / reply-log UI) is therefore built as the durable data model and the manual fallback, but is not expected to see heavy manual use before Phase 3 automates it.
+
+## Deferred items log (carried from Phase 1, still open)
+
+- **Apollo reactivation** — Kyle subscribes Apollo Basic (~$59-65/mo, tier TBC with Apollo sales to confirm `/people/match` is included) **after Phase 3 ships**, then runs `UPDATE prospects SET apollo_attempted_at = NULL WHERE director_email IS NULL;` to backfill director emails on the next cron. No code change — the existing `lib/agent/apollo.ts` resumes producing emails.
+- **Post-data prompt iterations** — CTA-templating refinement, ranking-reasoning specificity, website-found pitch tuning. Now fed by automated-send reply data rather than manual sends.
+- **CP8 ranker preference feedback** — see above; data-dependent.
+- **Monday auto-fire validation** — passive C10 confirmation on the first unattended weekly run.
