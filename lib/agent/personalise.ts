@@ -93,30 +93,36 @@ function extractPrefix(
 }
 
 const SIGN_OFF = "Kyle Potter — KP Solutions";
-const OPT_OUT = "Reply STOP if you'd prefer not to receive further messages.";
+const UNSUBSCRIBE_EMAIL = "unsubscribe@kpsolutions.io";
 
 // Match any line containing the sign-off (em/en/hyphen, optional
 // trailing period), with optional surrounding whitespace.
 const SIGN_OFF_LINE = /^[ \t]*Kyle Potter\s*[—–-]\s*KP Solutions\.?[ \t]*\r?\n?/gm;
-// Match any line containing "Reply STOP" — whatever exact phrasing the
-// model used; we replace it with the canonical opt-out string anyway.
-const OPT_OUT_LINE = /^[ \t]*Reply STOP[^\n]*\r?\n?/gim;
+// Match any model-written opt-out/unsubscribe line so we don't
+// duplicate the canonical one we append. Covers "Reply STOP..." (the
+// prior wording) and any line mentioning unsubscribe.
+const OPT_OUT_LINE = /^[ \t]*(?:Reply STOP|.*\bunsubscrib)[^\n]*\r?\n?/gim;
 
 /**
- * Belt-and-braces with the prompt's hard constraints. Strips any
- * existing copies of the opt-out and sign-off lines from the body
- * (wherever the model placed them) and appends both in canonical
- * order: blank line, opt-out, blank line, sign-off. Recognises common
- * sign-off variants — em/en/hyphen, trailing period — so we don't
- * duplicate when the model gets the punctuation right but the
- * separator wrong.
+ * Sole owner of the email's closing. The model is told not to write an
+ * opt-out or sign-off of its own, but enforce it anyway: strip any
+ * opt-out/unsubscribe and sign-off lines the model emitted, then
+ * append the canonical closing — blank line, plain-text unsubscribe,
+ * blank line, sign-off.
+ *
+ * The unsubscribe is a bare email address (not an HTML <a> tag) so it
+ * survives the Phase 1 copy-paste-into-Outlook workflow: Outlook and
+ * most clients auto-linkify a bare address into a clickable mailto on
+ * both the digest and the sent message. Phase 3 send-from-app can
+ * upgrade to a styled link.
  */
 function ensureClosing(body: string): string {
   const stripped = body
     .replace(SIGN_OFF_LINE, "")
     .replace(OPT_OUT_LINE, "")
     .trimEnd();
-  return `${stripped}\n\n${OPT_OUT}\n\n${SIGN_OFF}`;
+  const optOut = `Prefer not to hear from us? Email ${UNSUBSCRIBE_EMAIL}`;
+  return `${stripped}\n\n${optOut}\n\n${SIGN_OFF}`;
 }
 
 function logSoftConstraints(
