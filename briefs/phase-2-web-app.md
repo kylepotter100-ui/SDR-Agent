@@ -1,134 +1,256 @@
 # Phase 2 — Web Application Dashboard
 
-**Goal:** Kyle can log into a web app at `app.kpsolutions.io`, see the full historical pipeline of prospects surfaced by the agent, track each one through a sales pipeline (new → contacted → replied → qualified → closed → dead), add notes, mark prospects as ignored, and search/filter across everything. The Monday digest becomes a summary of new entries; the dashboard becomes the source of truth.
+**Goal:** Kyle logs into a dashboard, sees the full historical pipeline the agent has surfaced, tracks each prospect through a sales pipeline, records manual sends and replies, manages a suppression list, adds notes, and searches/filters across everything. The Monday digest stays as the weekly nudge; the dashboard becomes the source of truth for pipeline state.
 
-**Estimated effort:** 1 week of focused work.
+**Estimated effort:** 1 week of focused work, structured as six checkpoints.
 
-**Prerequisites:** Phase 1 is in production. At least two weeks of digest history exists. Kyle has used the digest workflow and can articulate which views he actually needs (not the views he thinks he needs).
+**Prerequisites (met):** Phase 1 is in production. The cron orchestration fires weekly. Kyle is **about to start manual outreach** by copy-pasting drafts from the digest into Outlook — so send-tracking, reply-logging, and suppression are live operational needs from day one of Phase 2, not Phase 3 niceties.
+
+---
+
+## What changed since the original brief
+
+This brief was first written before Phase 1 existed. Phase 1 reality differs from the original assumptions in ways that reshape Phase 2:
+
+1. **The `status` field exists but is inert.** Phase 1 created `prospects.status` with a seven-value CHECK (`new`, `surfaced`, `contacted`, `replied`, `qualified`, `dead`, `ignored`) but **nothing in the Phase 1 pipeline ever transitions it** — every prospect is still `new`. The digest sets `surfaced_in_digest_at` (a timestamp) but leaves `status` untouched. Phase 2 is where `status` becomes meaningful: Kyle drives the transitions. The original brief's pipeline used `closed`, which is **not** in the enum — this brief drops `closed` and works with the seven existing values (a CHECK-constraint migration is only needed if we decide we want `closed`; flagged below).
+
+2. **`ignored` is a status, not a boolean.** The original brief proposed `ignored boolean`. Phase 1 already made `ignored` a status value. This brief keeps it as a status and drops the separate boolean. `starred` stays a boolean (orthogonal — you can star a `contacted` prospect).
+
+3. **Director emails are mostly null.** Apollo is paused (free-tier 403s); `director_email` is null for the backlog and `apollo_attempted_at` is set on those rows. The dashboard must treat null emails as a first-class "lookup manually" state, not an error. When Kyle upgrades Apollo, emails backfill on the next cron — the dashboard should reflect whatever's there.
+
+4. **New observability table.** Phase 1 added `cron_runs` (one row per cron invocation, with per-stage `summary` jsonb, `errors`, `status`, `duration_ms`). The dashboard gets a near-free pipeline-health view from this.
+
+5. **Manual sending is the immediate workflow.** Phase 1 has no send capability — Kyle copies drafts into Outlook by hand. This means Phase 2 must support recording *that a send happened*, *when*, and *what came back* — a `prospect_sends` table and manual reply logging — well before Phase 3's automated send-from-app exists.
+
+6. **Deployment is the same Vercel project.** No separate `app.kpsolutions.io` subdomain at launch. The dashboard is added as `/dashboard/...` routes inside the existing Next.js app (`sdr-agent-one.vercel.app`), alongside the cron and dev routes. A custom domain can be pointed at it later without code change.
+
+7. **RLS is already prepared.** Phase 1 enabled RLS on all tables with an `authenticated`-full-access policy — exactly what the dashboard's session-scoped client will use. The agent keeps using the service-role client (`lib/db.ts`), which bypasses RLS. The dashboard uses a *separate, session-scoped* client so RLS actually applies.
+
+---
 
 ## Success criteria
 
-1. Kyle can log in at `app.kpsolutions.io` from desktop or mobile.
-2. The home view shows the current pipeline: counts by status, this week's new prospects, this week's responses, and a focus list of "next actions."
-3. Clicking any prospect opens a detail view with the full record, the email draft, status controls, and notes.
-4. Status changes persist immediately and are reflected in the home view.
-5. The agent ingests Kyle's status changes as preference signal — prospects marked "qualified" or "ignored" influence next week's ranking.
-6. Mobile-first: every view works cleanly on iPhone-width without horizontal scroll or zoom.
+1. Kyle logs in via Supabase Auth magic link from desktop or mobile; only his allowlisted email is admitted.
+2. Home view shows current pipeline at a glance: counts per status, this week's surfaced prospects, prospects awaiting a reply, recently-changed.
+3. Any prospect opens to a detail view: full record, email draft (copyable), status controls, notes, send history, reply log.
+4. Status changes, notes, sends, and replies persist immediately and are reflected across views on next navigation.
+5. Kyle can record a manual send (date + which draft) and log a reply against a prospect, moving it through the pipeline.
+6. Suppression list works end-to-end: Kyle marks an address/prospect suppressed, and the **agent pipeline excludes suppressed prospects** from future personalisation and digests.
+7. Mobile-first: every view works cleanly at ~390px with no horizontal scroll.
+
+---
 
 ## What this phase adds
 
-- Supabase Auth (single-user, email magic link)
-- `/dashboard` route group, protected
-- Home view with pipeline overview
-- List view with filters and search
-- Detail view per prospect
-- Status pipeline UI (Kanban-light or list-with-status — see design notes)
-- Notes per prospect (free-text, multiple entries, timestamped)
-- Manual prospect creation (so Kyle can add leads he finds elsewhere)
-- "Ignore this one" / "Star this one" lightweight feedback that feeds the ranker
+- Supabase Auth (single-user, email magic link) + middleware allowlist
+- `@supabase/ssr` request-scoped clients for the dashboard (distinct from the agent's service-role `lib/db.ts`)
+- `/dashboard` protected route group in the existing Next.js app
+- Home / pipeline overview
+- Prospect list with filters + search
+- Prospect detail with status controls, notes, send history, reply log
+- **Manual send recording** (`prospect_sends`)
+- **Manual reply logging** (replies captured against a prospect; status auto-suggests `replied`)
+- **Suppression list** (`suppression_list`) + agent-pipeline enforcement
+- Notes per prospect (timestamped, multiple)
+- Star / ignore lightweight feedback
+- Digest history archive (reads existing `digests`)
+- Pipeline-health view (reads existing `cron_runs`)
+- Status-transition audit log (`prospect_status_transitions`)
 
-## What this phase explicitly doesn't build
+## What this phase explicitly does NOT build
 
-- No Gmail send-from-app (Phase 3)
-- No reply auto-detection or classification (Phase 3)
-- No team/multi-user features
-- No advanced reporting/charts beyond a simple pipeline counter strip
-- No CRM-style deal value / forecast tracking
+- No automated send-from-app / Outlook OAuth (Phase 3)
+- No automated reply detection or classification (Phase 3) — replies are logged **manually** in Phase 2
+- No team/multi-user features (schema stays multi-user-ready; UI is single-user)
+- No charts/reporting beyond the pipeline counter strip and the cron-health list
+- No CRM deal-value/forecast tracking
+- No Kanban board (list-with-status-filter is faster on mobile)
+- **No ranker preference-learning loop** — the status-transition log is *recorded* in Phase 2, but feeding it back into the Opus ranking prompt is deferred (it's a data-dependent prompt iteration, consistent with the Phase 1 "iterate after real data" discipline). Flagged as a stretch checkpoint, likely Phase 2.5.
+
+---
 
 ## Auth
 
-Supabase Auth, email magic link only. Single allowed email at launch: `kyle@kpsolutions.io`. Hardcoded allowlist in middleware — no signup form, no password reset, no recovery flow. Phase 4+ may add team members; design the schema to support it but don't build it.
+Supabase Auth, email magic link only. **Allowlist of one email**, hardcoded in middleware — no signup, no password flow, no recovery.
 
-## Dashboard structure
+**Open question for Kyle:** which email is the allowlist entry? The original brief said `kyle@kpsolutions.io`, but the operational reality is `kylepotter100@gmail.com` (the verified Resend recipient). Likely the gmail to start, switching to `kyle.potter@kpsolutions.io` once that mailbox is live. **Confirm before CP1.**
+
+Schema is built multi-user-ready (RLS, per-row ownership where it'd matter later) but the UI and allowlist are single-user.
+
+---
+
+## Deployment
+
+Same Vercel project, same Next.js app. The dashboard is a new route group; the agent crons and dev routes are untouched. No new subdomain at launch — `sdr-agent-one.vercel.app/dashboard`. A vanity domain can be attached in Vercel later with zero code change.
+
+`vercel.json` cron config is unaffected. Middleware will need to scope auth checks to `/dashboard/*` and explicitly **exclude** `/api/cron/*` and `/api/dev/*` (those use Bearer-token auth, not session auth) so we don't accidentally gate the agent behind a login.
+
+---
+
+## Routes structure
 
 ```
-app.kpsolutions.io/
-├── /                          (public landing — minimal, just a "log in" button)
-├── /auth/callback             (magic link handler)
-└── /dashboard                 (protected)
+sdr-agent-one.vercel.app/
+├── /                          (existing minimal landing — add a "log in" link)
+├── /login                     (magic-link request form)
+├── /auth/callback             (magic-link handler)
+├── /api/cron/*                (existing — Bearer auth, NOT session-gated)
+├── /api/dev/*                 (existing — Bearer auth, NOT session-gated)
+└── /dashboard                 (protected — session + allowlist)
     ├── /                      (home: pipeline overview)
-    ├── /prospects             (full list with filters)
-    ├── /prospects/[id]        (single prospect detail)
+    ├── /prospects             (list with filters + search)
+    ├── /prospects/[id]        (detail: record, draft, status, notes, sends, replies)
     ├── /digests               (digest history archive)
-    └── /settings              (postcode config, SIC weights, sending hours)
+    ├── /suppression           (suppression list management)
+    ├── /pipeline-health       (recent cron runs, costs, stage status)
+    └── /settings              (postcode prefixes, SIC tier weights)
 ```
+
+---
 
 ## Views
 
-**Home (`/dashboard`).** A scannable pipeline strip across the top showing counts per status (New 23 / Contacted 8 / Replied 2 / Qualified 1). Below: a "focus" list — three sections:
-1. *New this week* — prospects surfaced in the most recent digest, not yet actioned. Tappable to detail view.
-2. *Awaiting reply* — contacted more than 4 days ago, no status change since. These are follow-up prompts.
-3. *Recently changed* — anything Kyle (or the system) updated in the last 48 hours, so context is fresh.
+**Home (`/dashboard`).** Pipeline counter strip across the top (New / Surfaced / Contacted / Replied / Qualified / Dead / Ignored). Below, three focus lists:
+1. *Surfaced, not yet sent* — in a digest, `status` still `new`/`surfaced`, no `prospect_sends` row. The "act on these" list.
+2. *Awaiting reply* — sent (`prospect_sends` exists), no reply logged, sent > 4 days ago.
+3. *Recently changed* — any status transition / note / send / reply in the last 48h.
 
-Each list row: business name, status pill, signal line, last action timestamp. Tappable.
+Row: business name, status pill, signal line, last-action timestamp. Tappable.
 
-**Prospect list (`/dashboard/prospects`).** Table view (mobile: card stack). Columns: name, location, SIC tier, status, ranking score, last action. Sticky filter bar at top: status (multi-select), SIC tier (multi-select), postcode prefix, text search. Default sort: ranking score descending, then surfaced-at descending.
+**Prospect list (`/dashboard/prospects`).** Table on desktop, card stack on mobile. Columns: name, location, SIC tier, status, ranking score, last action. Sticky filter bar: status (multi-select), SIC tier, postcode prefix, has-email (yes/no — useful while Apollo is paused), text search. Default sort: ranking score desc, then `surfaced_in_digest_at` desc.
 
-**Prospect detail (`/dashboard/prospects/[id]`).** Single column on mobile, two columns on desktop. Left/top: the prospect facts (name, address, director, signal, ranking, ranking reasoning, Companies House link, Maps link, Facebook link). Right/bottom: status controls, the personalised email draft in a copyable code block, notes thread (add new, see history), "star" and "ignore" buttons.
+**Prospect detail (`/dashboard/prospects/[id]`).** Single column mobile, two columns desktop.
+- Facts: name, address, director (+ email or "lookup manually"), signal, ranking score + reasoning, Companies House link, website/Facebook links, incorporation date.
+- Email draft in a copyable `<pre>`/code block (same content the digest shows).
+- Status control (dropdown over the seven values, writes a transition row).
+- Send recorder: "Mark sent" → records `prospect_sends` (date, optional channel note), auto-suggests moving status to `contacted`.
+- Reply log: add a reply (free text + received date), auto-suggests `replied`.
+- Notes thread (add, see history).
+- Star / ignore buttons. Suppress button (adds to suppression list + sets status `ignored`).
 
-**Digest history (`/dashboard/digests`).** Reverse-chrono list of every weekly digest. Each opens to show which 15 prospects were in it, with current statuses overlaid so Kyle can see "of the 15 sent on March 4th, 3 are now in qualified."
+**Digest history (`/dashboard/digests`).** Reverse-chrono from the `digests` table. Each entry expands to its 15 prospect_ids with *current* status overlaid ("of the 15 sent 12 May, 2 are now qualified").
 
-**Settings (`/dashboard/settings`).** Two things initially: postcode prefix list (add/remove from the agent's catchment) and SIC tier weights (sliders). Changes take effect the next time the agent runs.
+**Suppression (`/dashboard/suppression`).** List of suppressed addresses/prospects with reason and date. Add manually (paste an email or mark from a prospect). This is the table the **agent reads** before personalising or surfacing.
 
-## Design system
+**Pipeline health (`/dashboard/pipeline-health`).** Reverse-chrono `cron_runs`: kind (prepare/digest/manual), status (ok/partial/failed), per-stage counts + durations, total cost, errors. Gives Kyle "did Monday's run work and what did it cost" without digging through Vercel logs.
 
-**To be confirmed before Phase 2 implementation begins.** A new design language will be defined for KP Solutions and applied here — do not import colours, typography, or visual conventions from any previous KP Solutions projects. This brief intentionally leaves the visual layer open; what matters at the structural level is:
+**Settings (`/dashboard/settings`).** Postcode prefix list and SIC tier weights. These currently live as constants in `lib/config.ts` — making them DB-backed and editable is a real change to the agent (it would read config from the DB instead of the source file). **Flagged as scope:** this is more than a dashboard view; it's an agent refactor. Recommend CP-deferring or making settings read-only-display in Phase 2 and editable in a follow-up. Decide at planning.
 
-- **Mobile-first** — every view designed for ~390px width first, enhanced for desktop
-- **Scannable** — Kyle reviews this on phone, on the move; visual hierarchy serves fast skim
-- **Quiet, not flashy** — this is a craft tool, not a marketing surface; restraint reads as confidence
-- **Status pills, type scale, spacing tokens, and core component patterns** will be agreed before any UI is built
-
-When Phase 2 begins, the first sub-task is finalising the design tokens and producing a minimal component sketch (header, list row, prospect card, status pill, button states) before any dashboard pages are coded.
+---
 
 ## Data model additions
 
-Extend the Phase 1 schema:
+Reconciled against the actual Phase 1 schema (`companies_house_raw`, `prospects` incl. `apollo_attempted_at` / `surfaced_in_digest_at` / `ranking_*` / `personalised_email_*`, `digests`, `cron_runs`).
 
 ```sql
--- New table for notes
+-- Notes (timestamped, multiple per prospect)
 prospect_notes (
-  id uuid primary key,
-  prospect_id uuid not null references prospects on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  prospect_id uuid not null references prospects(id) on delete cascade,
   body text not null,
-  created_at timestamptz default now()
+  created_at timestamptz not null default now()
+)
+
+-- Manual send records (Phase 1 has no auto-send; Kyle copy-pastes)
+prospect_sends (
+  id uuid primary key default gen_random_uuid(),
+  prospect_id uuid not null references prospects(id) on delete cascade,
+  sent_at timestamptz not null default now(),
+  channel text not null default 'outlook_manual',
+  subject text,                 -- snapshot of what was sent
+  body text,                    -- snapshot of what was sent
+  notes text
+)
+
+-- Manually-logged replies (Phase 3 automates detection)
+prospect_replies (
+  id uuid primary key default gen_random_uuid(),
+  prospect_id uuid not null references prospects(id) on delete cascade,
+  received_at timestamptz not null default now(),
+  body text,
+  sentiment text,               -- free text / coarse label, Kyle's call
+  created_at timestamptz not null default now()
+)
+
+-- Global suppression list — the agent checks this before personalising/surfacing
+suppression_list (
+  email text primary key,
+  reason text not null,         -- unsubscribe, bounce, manual_block
+  added_at timestamptz not null default now(),
+  notes text
+)
+
+-- Status transition audit (also the future ranker-feedback source)
+prospect_status_transitions (
+  id uuid primary key default gen_random_uuid(),
+  prospect_id uuid not null references prospects(id) on delete cascade,
+  from_status text,
+  to_status text not null,
+  changed_at timestamptz not null default now(),
+  changed_by text not null      -- 'kyle' | 'system'
 )
 
 -- New columns on prospects
-alter table prospects add column starred boolean default false;
-alter table prospects add column ignored boolean default false;
+alter table prospects add column starred boolean not null default false;
 alter table prospects add column last_action_at timestamptz;
-alter table prospects add column last_action_by text;  -- 'system' or 'kyle'
-
--- Status transitions log (audit + ranker feedback)
-prospect_status_transitions (
-  id uuid primary key,
-  prospect_id uuid not null references prospects on delete cascade,
-  from_status text,
-  to_status text not null,
-  changed_at timestamptz default now(),
-  changed_by text not null
-)
+alter table prospects add column last_action_by text;   -- 'system' | 'kyle'
 ```
 
-The transitions table is what feeds Phase 2's ranker improvement: next week's Opus ranking call gets a summary of "Kyle qualified 2 from last week's digest and ignored 5; here's what they had in common." That's preference learning by example, no fine-tuning needed.
+Notes:
+- **`ignored`** stays a `status` value — no boolean column.
+- **`last_action_at`** is distinct from the existing `updated_at` (which the trigger bumps on any write). `last_action_at` is human/meaningful-action time, for the home view's "recently changed" / "awaiting reply".
+- Every new table gets RLS enabled + the `authenticated`-full-access policy, matching the Phase 1 pattern. Migrations are hand-authored SQL applied via Supabase Studio, and `lib/db.types.ts` is hand-updated (per the standing convention).
+- **Suppression enforcement is an agent change**, not just a table: `discover`/`personalise` (and the digest selection) must skip prospects whose `director_email` is in `suppression_list`. That touches Phase 1 agent modules — scoped into CP5.
 
-## Implementation notes
+---
 
-**Route grouping.** Use Next.js route groups: `app/(public)/` for the landing, `app/(dashboard)/` for the protected app, both within the single `app.kpsolutions.io` Next.js project.
+## UI library decision
 
-**Middleware auth.** Single `middleware.ts` checks Supabase session and email allowlist. Redirects unauthenticated requests to `/` with a `?from=` param so post-login lands on the requested page.
+**Tailwind v4 (already in the project) + shadcn/ui.** Recommendation and reasoning:
 
-**RLS.** Even single-user, set up row-level security on all tables now — it's near-free and Phase 4+ will need it. Single policy: authenticated users can read/write everything (will tighten when multi-user).
+- shadcn/ui is copy-in components (not a runtime dependency lock-in) built on Radix primitives + Tailwind. We pull in only what we need — button, input, dropdown/select, dialog, table, card, badge (status pills), tabs. Accessible by default, restyle freely, no heavyweight design-system commitment.
+- It suits an internal tool: quiet, functional, not over-designed — exactly the "craft tool not marketing surface" intent from the original brief.
+- It's the path of least resistance on Next 16 / React 19 / Tailwind v4, which this project already runs.
 
-**Realtime.** Use Supabase Realtime subscriptions on the home view so status changes from one tab show in another. Don't over-engineer — one channel per table is fine.
+**Verification flag:** shadcn/ui's Tailwind v4 + React 19 support is recent; CP1's first task is confirming the `shadcn` init works cleanly on this exact stack before building on it. If it fights the toolchain, fallback is hand-rolled Tailwind components for the ~7 primitives we need — more code, zero new dependency, equally fine for this scope.
 
-**Mobile-first.** Every view is designed for 390px-wide first, then enhanced for desktop. If a view is hard to build for mobile, the design is wrong, not the implementation.
+**Design tokens:** keep it minimal and neutral — a small neutral palette, one accent, system-font or a single self-hosted sans, generous spacing, status pills colour-coded by pipeline stage. No elaborate design language needed for a single-user internal tool. Agree the palette + status-pill colours at CP1, not before.
 
-**Don't build a Kanban board.** Tempting, but a list-with-status-filter is faster for Kyle on mobile than a horizontal-scrolling Kanban. Save Kanban for v3 if it earns its place.
+---
+
+## Checkpoint sequence
+
+Six checkpoints, same discipline as Phase 1: small reviewable units, one feature branch + PR each, preview-first, pause for Kyle's review before the next.
+
+**CP1 — Auth, shell, component baseline.** Supabase Auth wired (`@supabase/ssr` server + client helpers), `/login` + `/auth/callback`, `middleware.ts` gating `/dashboard/*` against session + single-email allowlist (and explicitly NOT gating `/api/*`). shadcn/ui initialised and verified on the stack; status-pill + base components sketched. Empty authenticated `/dashboard` shell with nav. *Review: Kyle can log in on mobile and desktop; an un-allowlisted email is refused; the agent crons/dev routes still work unauthenticated.*
+
+**CP2 — Data-model migration.** All new tables + columns above, RLS + policies, hand-updated `lib/db.types.ts`. No UI yet — migration applied in Studio, types committed. *Review: tables visible in Studio; a dummy insert/read per table; existing agent pipeline unaffected.*
+
+**CP3 — Prospect list + detail (read-only).** List with filters/search; detail view rendering the full record + copyable draft. No writes yet. *Review: real Phase 1 prospects render correctly on mobile; null-email prospects show the manual-lookup state; filters work.*
+
+**CP4 — Status, notes, star/ignore (writes).** Status dropdown writing transition rows and driving `prospects.status` for real; notes thread; star/ignore; `last_action_at`/`last_action_by` maintained. *Review: changing status on mobile persists and shows in the list; transition log records correctly.*
+
+**CP5 — Sends, replies, suppression (+ agent enforcement).** Mark-sent recorder, reply logging, suppression list management UI, **and** the agent-side change so `personalise`/digest skip suppressed addresses. *Review: record a send → status suggests contacted; log a reply → status suggests replied; add a suppression → confirm the next `personalise` run skips that prospect.*
+
+**CP6 — Home, digest history, pipeline health.** The overview with the three focus lists; digest archive with current-status overlay; cron-health view. *Review: home reads as a useful Monday-morning operational glance; digest history shows status drift; pipeline-health surfaces the last run's cost + status.*
+
+**CP7 (stretch / Phase 2.5) — Ranker preference feedback.** Feed status transitions into the weekly Opus ranking prompt ("Kyle qualified these, ignored those — here's the pattern"). Deferred and data-dependent; only worth doing once there's real transition history. Not committed in the Phase 2 week.
+
+---
+
+## Risk / scope flags
+
+- **Settings editability is an agent refactor, not a view.** Making postcode prefixes / SIC weights DB-editable means the agent reads config from the DB instead of `lib/config.ts`. Recommend Phase 2 ships settings as read-only display (or omits the page) and editability lands as a scoped follow-up. Don't let it balloon CP6.
+- **Suppression enforcement touches Phase 1 agent code.** It's the one place Phase 2 reaches back into the working pipeline. Keep the change surgical (a single suppression check in the personalise candidate query and the digest selection) and test it carefully against the live pipeline — a bug here could skip legitimate prospects.
+- **Realtime is deferred.** The original brief suggested Supabase Realtime for multi-tab sync. For a single user it's over-engineering; refetch-on-navigation is enough. Add Realtime only if Kyle finds himself wanting it.
+- **Service-role vs session client discipline.** The dashboard MUST use the session-scoped `@supabase/ssr` client (RLS applies), never `lib/db.ts` (service role, RLS bypassed). Mixing them up would either break under RLS or silently over-grant. Call this out in CP1 and hold the line.
+- **The `status` enum may want `closed`.** The original brief used it; the Phase 1 CHECK doesn't have it. If the pipeline genuinely needs a terminal "won/closed" distinct from `qualified`, that's a one-line CHECK-constraint migration — decide during CP4 design, don't assume.
+- **Auth email must be confirmed** before CP1 (gmail vs kpsolutions.io).
+- **Mobile-first is load-bearing.** Kyle reviews on a phone. If a view is awkward at 390px the design is wrong, not the viewport.
+- **No design language hand-off needed.** Unlike the original brief's "design tokens TBC" gate, this brief deliberately keeps the visual layer minimal-neutral so Phase 2 isn't blocked waiting on a brand system. If a fuller design language emerges later it can restyle the shadcn components without structural change.
+
+---
 
 ## Where Phase 3 picks up
 
-Phase 3 adds the *send* button. That means Microsoft OAuth, sender subdomain setup, deliverability hardening, and reply detection via Microsoft Graph. The prospect detail page in Phase 2 already shows the email draft in a copyable block — Phase 3 adds a "Send via Outlook" action next to it that handles the OAuth flow.
-
-The status pipeline already has "contacted" — Phase 3 just makes the transition automatic when the send button is pressed, and adds the "replied" auto-transition when a reply is detected.
+Phase 3 adds the automated **send** and **reply detection** that Phase 2 does manually. The detail page's copyable draft gains a "Send via Outlook" action (Microsoft Graph OAuth); `prospect_sends` rows start being written by the system instead of by Kyle's "mark sent"; `prospect_replies` start being populated by Graph inbox subscriptions instead of manual logging; the suppression list built in Phase 2 becomes the hard gate on automated sends. The manual scaffolding from Phase 2 is the fallback and the data model both phases share.
