@@ -4,6 +4,19 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StatusPill } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";
+import { StatusSelect } from "@/components/dashboard/status-select";
+import { ProspectActions } from "@/components/dashboard/prospect-actions";
+import { AddNoteDialog } from "@/components/dashboard/add-note-dialog";
+
+function formatTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 const CH_PROFILE = "https://find-and-update.company-information.service.gov.uk/company/";
 
@@ -46,6 +59,12 @@ export default async function ProspectDetailPage({
   }
   if (!p) notFound();
 
+  const { data: notes } = await supabase
+    .from("prospect_notes")
+    .select("id, body, created_at")
+    .eq("prospect_id", id)
+    .order("created_at", { ascending: false });
+
   const hasDraft = Boolean(p.personalised_email_subject && p.personalised_email_body);
   const draftPlain = hasDraft
     ? `Subject: ${p.personalised_email_subject}\n\n${p.personalised_email_body}`
@@ -66,6 +85,10 @@ export default async function ProspectDetailPage({
           </h1>
           <StatusPill status={p.status} />
           {p.starred && <span className="text-amber-500">★</span>}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <StatusSelect id={p.id} status={p.status} />
+          <ProspectActions id={p.id} starred={p.starred} status={p.status} />
         </div>
       </div>
 
@@ -174,6 +197,32 @@ export default async function ProspectDetailPage({
             </p>
           )}
         </div>
+      </div>
+
+      {/* Notes */}
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+            Notes
+          </span>
+          <AddNoteDialog id={p.id} />
+        </div>
+        {notes && notes.length > 0 ? (
+          <ul className="flex flex-col gap-3">
+            {notes.map((n) => (
+              <li key={n.id} className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0">
+                <p className="whitespace-pre-wrap text-sm text-neutral-800">
+                  {n.body}
+                </p>
+                <p className="mt-1 text-xs text-neutral-400">
+                  {formatTimestamp(n.created_at)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-neutral-500">No notes yet.</p>
+        )}
       </div>
     </div>
   );
