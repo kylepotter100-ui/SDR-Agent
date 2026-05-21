@@ -28,6 +28,11 @@ import {
   type PersonalisationContext,
 } from "@/lib/prompts/personalise";
 import { POSTCODE_PREFIXES, type PostcodePrefix } from "@/lib/config";
+import {
+  getSuppressedEmails,
+  isSuppressed,
+  STATUS_EXCLUDED_FILTER,
+} from "@/lib/agent/suppression";
 
 const MAX_PERSONALISE_PER_RUN = 25;
 const MAX_OUTPUT_TOKENS = 1024;
@@ -152,16 +157,23 @@ export async function personalise(): Promise<PersonalisationSummary> {
   const candidates = await db()
     .from("prospects")
     .select(
-      "id, company_number, company_name, postcode, sic_description, director_name, observable_signal, has_website, website_url, facebook_url, incorporated_on, fit_weight, sic_tier, created_at",
+      "id, company_number, company_name, postcode, sic_description, director_name, director_email, observable_signal, has_website, website_url, facebook_url, incorporated_on, fit_weight, sic_tier, created_at",
     )
     .is("personalised_email_subject", null)
     .is("personalised_email_body", null)
+    .not("status", "in", STATUS_EXCLUDED_FILTER)
     .order("fit_weight", { ascending: false })
     .order("sic_tier", { ascending: true })
     .order("created_at", { ascending: true });
   if (candidates.error) throw candidates.error;
 
-  const all = candidates.data ?? [];
+  // Exclude suppressed addresses in JS (arbitrary email strings — avoids
+  // PostgREST filter-grammar quoting). Triaged statuses are already
+  // excluded at the query level above.
+  const suppressed = await getSuppressedEmails();
+  const all = (candidates.data ?? []).filter(
+    (p) => !isSuppressed(p.director_email, suppressed),
+  );
   const considered = all.length;
   const batch = all.slice(0, MAX_PERSONALISE_PER_RUN);
   const hitCap = considered > MAX_PERSONALISE_PER_RUN;
