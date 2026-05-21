@@ -23,11 +23,14 @@ export type Json =
 export type ProspectStatus =
   | "new"
   | "surfaced"
-  | "contacted"
+  | "sent"
   | "replied"
   | "qualified"
   | "dead"
+  | "opted_out"
   | "ignored";
+
+export type ActionActor = "system" | "kyle";
 
 export interface Database {
   public: {
@@ -79,6 +82,9 @@ export interface Database {
           status: ProspectStatus;
           surfaced_in_digest_at: string | null;
           apollo_attempted_at: string | null;
+          starred: boolean;
+          last_action_at: string | null;
+          last_action_by: ActionActor | null;
           created_at: string;
           updated_at: string;
         };
@@ -107,6 +113,9 @@ export interface Database {
           status?: ProspectStatus;
           surfaced_in_digest_at?: string | null;
           apollo_attempted_at?: string | null;
+          starred?: boolean;
+          last_action_at?: string | null;
+          last_action_by?: ActionActor | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -135,6 +144,9 @@ export interface Database {
           status?: ProspectStatus;
           surfaced_in_digest_at?: string | null;
           apollo_attempted_at?: string | null;
+          starred?: boolean;
+          last_action_at?: string | null;
+          last_action_by?: ActionActor | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -203,6 +215,160 @@ export interface Database {
           duration_ms?: number | null;
         };
         Relationships: [];
+      };
+      prospect_notes: {
+        Row: {
+          id: string;
+          prospect_id: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          prospect_id: string;
+          body: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          prospect_id?: string;
+          body?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospect_notes_prospect_id_fkey";
+            columns: ["prospect_id"];
+            referencedRelation: "prospects";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      prospect_sends: {
+        Row: {
+          id: string;
+          prospect_id: string;
+          sent_at: string;
+          channel: string;
+          subject: string | null;
+          body: string | null;
+          notes: string | null;
+        };
+        Insert: {
+          id?: string;
+          prospect_id: string;
+          sent_at?: string;
+          channel?: string;
+          subject?: string | null;
+          body?: string | null;
+          notes?: string | null;
+        };
+        Update: {
+          id?: string;
+          prospect_id?: string;
+          sent_at?: string;
+          channel?: string;
+          subject?: string | null;
+          body?: string | null;
+          notes?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospect_sends_prospect_id_fkey";
+            columns: ["prospect_id"];
+            referencedRelation: "prospects";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      prospect_replies: {
+        Row: {
+          id: string;
+          prospect_id: string;
+          received_at: string;
+          body: string | null;
+          sentiment: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          prospect_id: string;
+          received_at?: string;
+          body?: string | null;
+          sentiment?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          prospect_id?: string;
+          received_at?: string;
+          body?: string | null;
+          sentiment?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospect_replies_prospect_id_fkey";
+            columns: ["prospect_id"];
+            referencedRelation: "prospects";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      suppression_list: {
+        Row: {
+          email: string;
+          reason: string;
+          added_at: string;
+          notes: string | null;
+        };
+        Insert: {
+          email: string;
+          reason: string;
+          added_at?: string;
+          notes?: string | null;
+        };
+        Update: {
+          email?: string;
+          reason?: string;
+          added_at?: string;
+          notes?: string | null;
+        };
+        Relationships: [];
+      };
+      prospect_status_transitions: {
+        Row: {
+          id: string;
+          prospect_id: string;
+          from_status: ProspectStatus | null;
+          to_status: ProspectStatus;
+          changed_at: string;
+          changed_by: ActionActor;
+        };
+        Insert: {
+          id?: string;
+          prospect_id: string;
+          from_status?: ProspectStatus | null;
+          to_status: ProspectStatus;
+          changed_at?: string;
+          changed_by: ActionActor;
+        };
+        Update: {
+          id?: string;
+          prospect_id?: string;
+          from_status?: ProspectStatus | null;
+          to_status?: ProspectStatus;
+          changed_at?: string;
+          changed_by?: ActionActor;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospect_status_transitions_prospect_id_fkey";
+            columns: ["prospect_id"];
+            referencedRelation: "prospects";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: Record<string, never>;
