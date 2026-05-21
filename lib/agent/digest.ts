@@ -19,6 +19,11 @@
 
 import { db } from "@/lib/db";
 import { resend } from "@/lib/resend";
+import {
+  getSuppressedEmails,
+  isSuppressed,
+  STATUS_EXCLUDED_FILTER,
+} from "@/lib/agent/suppression";
 
 const TOP_N = 15;
 const COMPANIES_HOUSE_PROFILE_URL =
@@ -240,7 +245,19 @@ ${footer}
 </body></html>`;
 }
 
-async function selectTop15(): Promise<ProspectForDigest[]> {
+const ELIGIBLE_FETCH_LIMIT = 200;
+
+/**
+ * Fetch eligible prospects (unsurfaced, ranked, personalised), exclude
+ * triaged statuses at the query level and suppressed emails in JS, then
+ * derive both the considered count and the top-N selection from the
+ * same filtered set. Fetches a buffer beyond TOP_N so suppression
+ * filtering can't leave fewer than 15 when there are enough candidates.
+ */
+async function selectEligible(): Promise<{
+  considered: number;
+  top: ProspectForDigest[];
+}> {
   const result = await db()
     .from("prospects")
     .select(
@@ -250,24 +267,18 @@ async function selectTop15(): Promise<ProspectForDigest[]> {
     .not("ranking_score", "is", null)
     .not("personalised_email_subject", "is", null)
     .not("personalised_email_body", "is", null)
+    .not("status", "in", STATUS_EXCLUDED_FILTER)
     .order("ranking_score", { ascending: false })
     .order("sic_tier", { ascending: true })
     .order("created_at", { ascending: true })
-    .limit(TOP_N);
+    .limit(ELIGIBLE_FETCH_LIMIT);
   if (result.error) throw result.error;
-  return (result.data ?? []) as unknown as ProspectForDigest[];
-}
 
-async function countConsidered(): Promise<number> {
-  const result = await db()
-    .from("prospects")
-    .select("id", { count: "exact", head: true })
-    .is("surfaced_in_digest_at", null)
-    .not("ranking_score", "is", null)
-    .not("personalised_email_subject", "is", null)
-    .not("personalised_email_body", "is", null);
-  if (result.error) throw result.error;
-  return result.count ?? 0;
+  const suppressed = await getSuppressedEmails();
+  const eligible = ((result.data ?? []) as unknown as ProspectForDigest[]).filter(
+    (p) => !isSuppressed(p.director_email, suppressed),
+  );
+  return { considered: eligible.length, top: eligible.slice(0, TOP_N) };
 }
 
 /**
@@ -310,10 +321,9 @@ export async function digest(
   let prospects: ProspectForDigest[];
   let considered: number;
   try {
-    [prospects, considered] = await Promise.all([
-      selectTop15(),
-      countConsidered(),
-    ]);
+    const eligible = await selectEligible();
+    prospects = eligible.top;
+    considered = eligible.considered;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     recordError({ stage: "select", message });

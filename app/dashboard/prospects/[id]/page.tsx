@@ -7,6 +7,9 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { StatusSelect } from "@/components/dashboard/status-select";
 import { ProspectActions } from "@/components/dashboard/prospect-actions";
 import { AddNoteDialog } from "@/components/dashboard/add-note-dialog";
+import { MarkSentDialog } from "@/components/dashboard/mark-sent-dialog";
+import { LogReplyDialog } from "@/components/dashboard/log-reply-dialog";
+import { SuppressButton } from "@/components/dashboard/suppress-button";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
@@ -59,11 +62,24 @@ export default async function ProspectDetailPage({
   }
   if (!p) notFound();
 
-  const { data: notes } = await supabase
-    .from("prospect_notes")
-    .select("id, body, created_at")
-    .eq("prospect_id", id)
-    .order("created_at", { ascending: false });
+  const [{ data: notes }, { data: sends }, { data: replies }] =
+    await Promise.all([
+      supabase
+        .from("prospect_notes")
+        .select("id, body, created_at")
+        .eq("prospect_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("prospect_sends")
+        .select("id, sent_at, channel, notes")
+        .eq("prospect_id", id)
+        .order("sent_at", { ascending: false }),
+      supabase
+        .from("prospect_replies")
+        .select("id, received_at, body, sentiment")
+        .eq("prospect_id", id)
+        .order("received_at", { ascending: false }),
+    ]);
 
   const hasDraft = Boolean(p.personalised_email_subject && p.personalised_email_body);
   const draftPlain = hasDraft
@@ -89,6 +105,13 @@ export default async function ProspectDetailPage({
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <StatusSelect id={p.id} status={p.status} />
           <ProspectActions id={p.id} starred={p.starred} status={p.status} />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <MarkSentDialog id={p.id} />
+          <LogReplyDialog id={p.id} />
+          {p.director_email && (
+            <SuppressButton id={p.id} email={p.director_email} />
+          )}
         </div>
       </div>
 
@@ -223,6 +246,60 @@ export default async function ProspectDetailPage({
         ) : (
           <p className="text-sm text-neutral-500">No notes yet.</p>
         )}
+      </div>
+
+      {/* Sends + replies */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+            Sends
+          </span>
+          {sends && sends.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {sends.map((s) => (
+                <li key={s.id} className="text-sm text-neutral-800">
+                  {formatTimestamp(s.sent_at)}
+                  <span className="text-neutral-400"> · {s.channel}</span>
+                  {s.notes ? (
+                    <span className="block text-xs text-neutral-500">
+                      {s.notes}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500">Not sent yet.</p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+            Replies
+          </span>
+          {replies && replies.length > 0 ? (
+            <ul className="flex flex-col gap-3">
+              {replies.map((r) => (
+                <li
+                  key={r.id}
+                  className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0"
+                >
+                  <p className="text-xs text-neutral-400">
+                    {formatTimestamp(r.received_at)}
+                    {r.sentiment ? ` · ${r.sentiment}` : ""}
+                  </p>
+                  {r.body ? (
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">
+                      {r.body}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500">No replies logged.</p>
+          )}
+        </div>
       </div>
     </div>
   );
