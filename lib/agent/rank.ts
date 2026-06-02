@@ -5,13 +5,12 @@
  * once with the full list and the rubric from lib/prompts/rank.ts,
  * parses the JSON {prospect_id, score, reasoning} array via Zod,
  * persists each score + reasoning on the prospect, and returns the
- * top 15 by score for the digest layer (C8) to consume.
+ * top 15 by score for the digest layer to consume.
  *
- * Scores are clamped 0-100. Website-found prospects are post-processed
- * to cap at 50 belt-and-braces with the prompt rubric — the model can
- * (and probably will, occasionally) score them higher otherwise, and
- * the rubric breakage on those specific prospects matters for the
- * targeting strategy.
+ * Scores are clamped 0-100. Website-found prospects are NOT capped
+ * any more — the prompt now scores them in a 45-70 band (deliberately
+ * below the no-website classes but reachable), because the personaliser
+ * has a tailored pitch for them.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -25,10 +24,13 @@ import {
   rankUserPrompt,
   type RankCandidate,
 } from "@/lib/prompts/rank";
-import { POSTCODE_PREFIXES, type PostcodePrefix } from "@/lib/config";
+import {
+  fitWeightForCode,
+  POSTCODE_PREFIXES,
+  type PostcodePrefix,
+} from "@/lib/config";
 
 const MAX_OUTPUT_TOKENS = 16000;
-const WEBSITE_FOUND_SCORE_CAP = 50;
 const TOP_N = 15;
 
 // Opus 4.7 list pricing — USD per million tokens.
@@ -59,7 +61,6 @@ interface RankErrorRecord {
 export interface RankSummary {
   considered: number;
   ranked: number;
-  capsApplied: number;
   tokens: {
     input: number;
     cacheRead: number;
@@ -98,7 +99,7 @@ export async function rank(): Promise<RankSummary> {
   const candidatesResult = await db()
     .from("prospects")
     .select(
-      "id, company_number, company_name, postcode, sic_code, sic_description, sic_tier, observable_signal, has_website, website_url, facebook_url, director_name, incorporated_on, personalised_email_subject",
+      "id, company_number, company_name, postcode, sic_code, sic_description, sic_tier, observable_signal, has_website, website_url, facebook_url, director_name, incorporated_on",
     )
     .is("surfaced_in_digest_at", null);
   if (candidatesResult.error) throw candidatesResult.error;
@@ -118,7 +119,6 @@ export async function rank(): Promise<RankSummary> {
     facebook_url: r.facebook_url,
     director_name: r.director_name,
     incorporated_on: r.incorporated_on,
-    personalised_email_subject: r.personalised_email_subject,
   }));
 
   const errorsByBucket: Record<string, number> = {};
@@ -138,7 +138,6 @@ export async function rank(): Promise<RankSummary> {
     return {
       considered: 0,
       ranked: 0,
-      capsApplied: 0,
       tokens: { input: 0, cacheRead: 0, cacheCreation: 0, output: 0 },
       estimatedCostGbp: 0,
       errors: { byBucket: errorsByBucket, examples: errorExamples },
@@ -196,7 +195,6 @@ export async function rank(): Promise<RankSummary> {
     return {
       considered: candidates.length,
       ranked: 0,
-      capsApplied: 0,
       tokens: {
         input: inputTokens,
         cacheRead: cacheReadTokens,
@@ -210,7 +208,6 @@ export async function rank(): Promise<RankSummary> {
   }
 
   const byId = new Map(candidates.map((c) => [c.prospect_id, c]));
-  let capsApplied = 0;
 
   type Scored = {
     prospect_id: string;
@@ -220,7 +217,7 @@ export async function rank(): Promise<RankSummary> {
     observable_signal: string | null;
     has_website: boolean | null;
     sic_tier: number;
-    fit_weight_proxy: number;
+    fit_weight: number;
     created_at_order: number;
   };
   const scored: Scored[] = [];
@@ -236,14 +233,7 @@ export async function rank(): Promise<RankSummary> {
       });
       continue;
     }
-    let score = Math.max(0, Math.min(100, Math.round(r.score)));
-    if (prospect.has_website === true && score > WEBSITE_FOUND_SCORE_CAP) {
-      console.warn(
-        `[rank] cap ${prospect.company_name} (${r.prospect_id}): ${score} -> ${WEBSITE_FOUND_SCORE_CAP} (Website found)`,
-      );
-      score = WEBSITE_FOUND_SCORE_CAP;
-      capsApplied++;
-    }
+    const score = Math.max(0, Math.min(100, Math.round(r.score)));
     scored.push({
       prospect_id: r.prospect_id,
       company_name: prospect.company_name,
@@ -252,8 +242,10 @@ export async function rank(): Promise<RankSummary> {
       observable_signal: prospect.observable_signal,
       has_website: prospect.has_website,
       sic_tier: prospect.sic_tier,
-      // Tier 1 has highest fit weight; lower tier number = higher weight
-      fit_weight_proxy: -prospect.sic_tier,
+      // Real fit weight — tier numbers are NOT in fit-weight order
+      // (Tier 5 = 0.8 outranks Tiers 3/4). Sorting by -sic_tier would
+      // bury Tier 5; fitWeightForCode reads the authoritative weight.
+      fit_weight: fitWeightForCode(prospect.sic_code) ?? 0,
       created_at_order: createdOrder++,
     });
   }
@@ -280,8 +272,7 @@ export async function rank(): Promise<RankSummary> {
   const top15 = [...scored]
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      if (b.fit_weight_proxy !== a.fit_weight_proxy)
-        return b.fit_weight_proxy - a.fit_weight_proxy;
+      if (b.fit_weight !== a.fit_weight) return b.fit_weight - a.fit_weight;
       return a.created_at_order - b.created_at_order;
     })
     .slice(0, TOP_N)
@@ -305,7 +296,6 @@ export async function rank(): Promise<RankSummary> {
   const summary: RankSummary = {
     considered: candidates.length,
     ranked,
-    capsApplied,
     tokens: {
       input: inputTokens,
       cacheRead: cacheReadTokens,
@@ -320,7 +310,6 @@ export async function rank(): Promise<RankSummary> {
   console.log("[rank] summary", {
     considered: summary.considered,
     ranked: summary.ranked,
-    capsApplied: summary.capsApplied,
     tokens: summary.tokens,
     estimatedCostGbp: summary.estimatedCostGbp,
   });
