@@ -154,6 +154,76 @@ export function ensureClosing(body: string): string {
   return `${stripped}\n\n${SIGN_OFF}\n${TITLE}\n${WEBSITE_LINE}\n\n${optOut}`;
 }
 
+// Honorific/title tokens to skip when scanning for a forename. Trailing
+// periods are stripped before lookup ("Dr." -> "dr").
+const NAME_TITLES = new Set([
+  "dr",
+  "mr",
+  "mrs",
+  "ms",
+  "miss",
+  "mx",
+  "prof",
+  "professor",
+  "sir",
+  "dame",
+  "lord",
+  "lady",
+  "rev",
+  "reverend",
+  "capt",
+  "captain",
+  "major",
+  "col",
+  "colonel",
+]);
+
+// A greeting line the model may have written despite instructions. Anchored
+// to the first line and required to end in a comma, so a hook sentence that
+// merely begins with one of these words is not mistaken for a salutation.
+const LEADING_GREETING = /^[ \t]*(?:Hi|Hello|Hey|Dear)\b[^\n]*,[ \t]*\r?\n+/i;
+
+/**
+ * Deterministic first-name extraction for the greeting. The greeting is the
+ * highest-risk element: the model writes excellent forenames but will not
+ * reliably DROP on ambiguous input, so we own it in code rather than trust
+ * the prompt.
+ *
+ * Exploits the Companies House convention that a forename is mixed-case
+ * (contains a lowercase letter) while a surname is ALL CAPS. We return the
+ * first token that contains a lowercase letter and is not an honorific —
+ * comma-ordered ("SMITH, Jonathan"), space-ordered ("Sarah Jane WHITMORE"),
+ * title-noised ("Alexey, Dr PETERNEV" -> "Alexey") and single-token
+ * ("Mxolisi") names all resolve. When no token qualifies — an all-caps pair
+ * like "ZHANG WEI", or a null/blank name — we return null and the greeting
+ * is dropped. We never guess.
+ */
+export function extractForename(directorName: string | null): string | null {
+  if (!directorName) return null;
+  const tokens = directorName.split(/[\s,]+/).filter(Boolean);
+  for (const token of tokens) {
+    const bare = token.replace(/\.$/, "").toLowerCase();
+    if (NAME_TITLES.has(bare)) continue;
+    // Mixed-case (has a lowercase letter) and starts with a letter: a
+    // forename by CH convention. ALL-CAPS surnames are skipped.
+    if (/^[A-Za-z]/.test(token) && /[a-z]/.test(token)) return token;
+  }
+  return null;
+}
+
+/**
+ * Prepend the deterministic greeting (or none) to the model body. Strips any
+ * salutation the model emitted first, so the code is the sole owner of the
+ * greeting just as ensureClosing owns the closing.
+ */
+export function prependGreeting(
+  forename: string | null,
+  body: string,
+): string {
+  const stripped = body.replace(LEADING_GREETING, "").replace(/^\s+/, "");
+  return forename ? `Hi ${forename},\n\n${stripped}` : stripped;
+}
+
 function logSoftConstraints(
   companyNumber: string,
   subject: string,
@@ -300,8 +370,11 @@ export async function personalise(): Promise<PersonalisationSummary> {
       continue;
     }
 
+    // Word budget (120-150) is measured on the model body, before the
+    // deterministic greeting and closing the system owns are attached.
     logSoftConstraints(prospect.company_number, subject, body);
-    body = ensureClosing(body);
+    const forename = extractForename(prospect.director_name);
+    body = ensureClosing(prependGreeting(forename, body));
 
     const upd = await db()
       .from("prospects")

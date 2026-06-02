@@ -56,12 +56,19 @@
  *   booking, payments and client-communications system that runs itself
  *   ... own outright with no monthly platform fees"), never a portfolio.
  *   The AI-discoverability wedge (found by AI search tools, not just
- *   Google) is woven into "What I do" on every email. Greeting is now
- *   "Hi [FirstName]," from a cleanly extracted first name, dropped
- *   rather than guessed when the name is unparseable. The closing is
- *   reordered + reformatted by ensureClosing(): signature block first
- *   (Kyle Potter - KP Solutions / Founder / w: URL), opt-out at the
- *   very bottom.
+ *   Google) is woven into "What I do" on every email. The greeting is
+ *   owned in code, not the prompt: the model writes no salutation, and
+ *   extractForename()/prependGreeting() in lib/agent/personalise.ts
+ *   deterministically extract the first confident forename (Companies
+ *   House convention: mixed-case forename, ALL-CAPS surname) and DROP
+ *   the greeting on ambiguous input rather than guess — the model's
+ *   extraction was good but would not reliably drop. Length is a hard
+ *   120-150 cap with an explicit per-part word budget (parts 3-5 are
+ *   ~95 fixed words, leaving ~40-50 for hook + "what I do"); the
+ *   vertical is grounded in the SIC description, not the company name.
+ *   The closing is reordered + reformatted by ensureClosing(): signature
+ *   block first (Kyle Potter - KP Solutions / Founder / w: URL), opt-out
+ *   at the very bottom.
  */
 
 import type { PostcodePrefix } from "@/lib/config";
@@ -87,18 +94,17 @@ Voice:
 - Complete, natural sentences. No clipped fragments — write "I noticed you were incorporated recently", not "Noticed you're new".
 - Warm, human, direct. A real person's note, not marketing. Confident and plain. No hype, no exclamation marks, no emojis. UK English throughout ("personalisation" not "personalization", "organisation" not "organization", "behaviour" not "behavior").
 
-GREETING — "Hi [FirstName]," on its own line, then a blank line, then the body.
-- Extract a clean FIRST (given) name from the Director name field. Companies House records are messy: names may be "Forename Surname", comma-ordered "SURNAME, Forename", or carry titles and noise (e.g. "Alexey, Dr PETERNEV").
-- Rules: strip titles (Dr, Mr, Mrs, Ms, Miss, Prof, Sir, etc.). In a comma-ordered name the given name follows the comma. An all-caps token is almost always the SURNAME (Companies House convention) — never greet with it as if it were a first name. Use the given name only, in normal case (e.g. "Alexey, Dr PETERNEV" -> "Hi Alexey,").
-- If the director name is missing, or you cannot CONFIDENTLY identify the correct first name, DROP the greeting entirely and open directly on the hook. Never guess. Greeting someone by the wrong name is worse than no greeting.
+GREETING — do NOT write a greeting or salutation. The system prepends the
+greeting ("Hi [FirstName],") deterministically, or drops it when the name is
+ambiguous. Begin the body directly with the hook (part 1).
 
 FIXED STRUCTURE — every email has these five parts, in this order. Do not add, reorder, or label them; they flow as natural paragraphs.
 
-1. HOOK — open with a true, prospect-relevant framing that makes them care, grounded in their real situation (incorporation timing, their vertical from the SIC description). Not generic. Model: "I noticed [Company] was incorporated recently, which means you're at the stage where the systems you put in place now shape how the business runs as it grows."
+1. HOOK — ONE sentence. A true, prospect-relevant framing grounded in incorporation timing and the prospect's vertical. Take the vertical from the SIC DESCRIPTION, not the company name — names are often opaque or generic, so do not infer the trade from the name. Model: "I noticed [Company] was incorporated recently, which means you're at the stage where the systems you put in place now shape how the business runs as it grows."
 
-2. WHAT I DO — adapted to this prospect's vertical and their website signal. Describe concrete OUTCOMES, not feature names ("clients booking and paying themselves, reminders and follow-ups handled automatically", not "a booking system"). Always weave in the AI-discoverability wedge: a website built to be found by the AI tools people increasingly use to search — ChatGPT, Perplexity and similar — not just Google. Branch on whether the prospect has a real website:
-   - NO real website yet (the record says no Google Maps presence, Google Maps listed with no website found, or Facebook-only): include building their web presence AND the operational tooling — an AI-discoverable site built for them that also takes the admin off their plate (bookings, payments, client comms).
-   - A REAL website already exists (the record says "Website found"): do NOT pitch a new site. Pivot to making their EXISTING site AI-discoverable, plus the operational tooling on top of what they already have.
+2. WHAT I DO — ONE or TWO short sentences, no more. Name one or two concrete OUTCOMES that fit this vertical (from the SIC description), as outcomes not features ("clients booking and paying themselves", not "a booking system"), and weave in the AI-discoverability wedge once: found by the AI tools people now search with — ChatGPT, Perplexity — not just Google. Do not list or elaborate; pick the one or two outcomes that matter most for the vertical. Branch on the website signal:
+   - NO real website yet (no Google Maps presence, Google Maps listed with no website found, or Facebook-only): frame it as an AI-discoverable site built for them that also takes the admin off their plate.
+   - A REAL website already exists ("Website found"): do NOT pitch a new site — make their existing site AI-discoverable and add the operational tooling on top.
 
 3. PROOF — The Potter Sanctuary as a RESULT, not a spec list. Use this shape, kept honest and singular: "I did exactly that for The Potter Sanctuary, a wellness studio in the UK: a complete booking, payments and client-communications system that runs itself, and that they own outright with no monthly platform fees." This is the ONE project you reference — exactly one, singular. Never imply a portfolio, never say "clients" plural, never invent metrics, location beyond "the UK", size, or founder details.
 
@@ -107,7 +113,7 @@ FIXED STRUCTURE — every email has these five parts, in this order. Do not add,
 5. CTA — problem-oriented, low-friction, a 30-minute call, with NO calendar or booking link. Use this shape: "If that's useful, I'd value a 30-minute call to work out where it would make the biggest difference early on."
 
 Hard constraints:
-- Body length ~120 to 150 words (greeting and the closing the system appends are excluded). Substance over padding, but do not balloon past 150.
+- LENGTH IS A HARD LIMIT. The body must be 120 to 150 words (excluding the greeting and the closing, which the system attaches). Never exceed 150. Budget: parts 3, 4 and 5 are largely fixed and run about 95 words together, which leaves only about 40 to 50 words for the hook and "what I do" combined — so the hook is one sentence and "what I do" is one or two short sentences. Count the words before you finish; if you are over 150, cut from the hook and "what I do", never from the proof, offer or CTA.
 - Plain text only. No HTML, no markdown, no bullet points.
 - Ground every OBSERVATION about the prospect strictly in the record's fields: company name, location, SIC description, incorporation date, and website/Google Maps status. Do NOT invent premises, branding, specific services, social activity, owner background, or any fact not in the record. The capability you describe in "What I do" is general to the vertical and is fine; claims about THIS prospect's situation must come from the five fields.
 - Do NOT describe or speculate about the prospect's current setup ("stop wrestling with...", "instead of patching together...") — you have not seen it.
@@ -116,7 +122,7 @@ Hard constraints:
 - Subject line: 4 to 7 words, grounded in this prospect. Vary the shape — not a "Custom software for [Company]" template. A plain operational phrase works ("Getting [Company] found and booked"). No clickbait, no "quick question", "circling back", "touching base".
 - Banned words and phrases: "leverage", "solution", "synergy", "innovative", "cutting-edge", "I hope this finds you well", "I trust you're well", "circle back", "touch base", "your beautiful/stunning/lovely [anything]", "love what you're doing", "saw your Instagram", "saw your Facebook post", "came across your page", "came across your listing".
 
-Output format: a JSON object with exactly two keys, "subject" and "body". The body BEGINS with the greeting ("Hi [FirstName]," then a blank line) when a first name is available, or directly with the hook when it is not. Use "\\n\\n" between paragraphs.`;
+Output format: a JSON object with exactly two keys, "subject" and "body". The body BEGINS with the hook (part 1) — no greeting, the system prepends it. Use "\\n\\n" between paragraphs.`;
 
 function websiteStatusLine(ctx: PersonalisationContext): string {
   if (ctx.has_website === true && ctx.website_url) {

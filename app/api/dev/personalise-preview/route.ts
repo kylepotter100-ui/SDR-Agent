@@ -3,7 +3,11 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 import { claude, SONNET_MODEL_ID } from "@/lib/anthropic";
-import { ensureClosing } from "@/lib/agent/personalise";
+import {
+  ensureClosing,
+  extractForename,
+  prependGreeting,
+} from "@/lib/agent/personalise";
 import {
   PERSONALISATION_SYSTEM_PROMPT,
   personalisationUserPrompt,
@@ -67,6 +71,9 @@ function ctx(partial: Partial<PersonalisationContext>): PersonalisationContext {
   };
 }
 
+// Director names use the real Companies House convention (mixed-case
+// forename, ALL-CAPS surname). Several company names are deliberately opaque
+// so the model must take the vertical from the SIC description, not the name.
 const SCENARIOS: Scenario[] = [
   {
     label: "no-presence + multi-given-name",
@@ -75,27 +82,27 @@ const SCENARIOS: Scenario[] = [
       company_name: "Whitmore Wellbeing Ltd",
       postcode: "LE11",
       sic_description: "Other human health activities",
-      director_name: "Sarah Jane Whitmore",
+      director_name: "Sarah Jane WHITMORE",
       observable_signal: "No Google Maps presence — very new business",
       has_website: null,
     }),
   },
   {
-    label: "website-found + comma-ordered, all-caps surname",
-    expectGreeting: '"Hi Jonathan," (given name follows the comma)',
+    label: "website-found + comma-ordered name + opaque company name",
+    expectGreeting: '"Hi Jonathan," (given name, ALL-CAPS surname skipped)',
     ctx: ctx({
-      company_name: "Apex Court Sports Ltd",
+      company_name: "Redhill Ventures Ltd",
       postcode: "NG7",
       sic_description: "Operation of sports facilities",
       director_name: "SMITH, Jonathan",
       observable_signal: "Website found",
       has_website: true,
-      website_url: "https://apexcourtsports.co.uk",
+      website_url: "https://redhillcourts.co.uk",
     }),
   },
   {
     label: "Maps-listed, no website + title-and-comma noise (brief's example)",
-    expectGreeting: '"Hi Alexey," (strip the Dr title; PETERNEV is surname)',
+    expectGreeting: '"Hi Alexey," (Dr title skipped; PETERNEV is surname)',
     ctx: ctx({
       company_name: "Peternev Physiotherapy Ltd",
       postcode: "DE1",
@@ -106,10 +113,10 @@ const SCENARIOS: Scenario[] = [
     }),
   },
   {
-    label: "no-presence + single-token name",
+    label: "no-presence + single-token name + opaque company name",
     expectGreeting: '"Hi Mxolisi,"',
     ctx: ctx({
-      company_name: "Mxolisi Mobile Grooming Ltd",
+      company_name: "M.N. Services Ltd",
       postcode: "NN1",
       sic_description: "Hairdressing and other beauty treatment",
       director_name: "Mxolisi",
@@ -131,11 +138,11 @@ const SCENARIOS: Scenario[] = [
     }),
   },
   {
-    label: "Maps-listed, no website + ambiguous all-caps pair",
+    label: "Maps-listed, no website + ambiguous all-caps pair + opaque name",
     expectGreeting:
       "greeting DROPPED (both tokens all-caps — given vs surname unclear; must not guess)",
     ctx: ctx({
-      company_name: "Golden Wok Express Ltd",
+      company_name: "GW Foods Ltd",
       postcode: "NG1",
       sic_description: "Take-away food shops and mobile food stands",
       director_name: "ZHANG WEI",
@@ -185,14 +192,19 @@ export async function POST(request: Request) {
       }
 
       const { subject, body: modelBody } = response.parsed_output;
+      // Mirror the production pipeline exactly: deterministic greeting, then
+      // the canonical closing. bodyWordCount measures the model body only
+      // (the 120-150 budget excludes greeting + closing).
+      const forename = extractForename(scenario.ctx.director_name);
       samples.push({
         label: scenario.label,
         director_name: scenario.ctx.director_name,
+        extractedForename: forename ?? "(dropped)",
         observable_signal: scenario.ctx.observable_signal,
         expectGreeting: scenario.expectGreeting,
         subject,
         bodyWordCount: wordCount(modelBody),
-        body: ensureClosing(modelBody),
+        body: ensureClosing(prependGreeting(forename, modelBody)),
       });
     }
 
