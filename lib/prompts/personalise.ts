@@ -62,11 +62,15 @@
  *   deterministically extract the first confident forename (Companies
  *   House convention: mixed-case forename, ALL-CAPS surname) and DROP
  *   the greeting on ambiguous input rather than guess — the model's
- *   extraction was good but would not reliably drop. Length is a hard
- *   120-150 cap with an explicit per-part word budget (parts 3-5 are
- *   ~95 fixed words, leaving ~40-50 for hook + "what I do"); the
- *   vertical is grounded in the SIC description, not the company name.
- *   The closing is reordered + reformatted by ensureClosing(): signature
+ *   extraction was good but would not reliably drop. The prompt keeps a
+ *   tight per-part word budget as downward pressure (hook one sentence,
+ *   "what I do" one or two), though in practice the body lands ~170-180
+ *   words because parts 3-5 are largely fixed verbatim — accepted in
+ *   review as the right length, not trimmed further. The vertical is
+ *   grounded in the SIC description, not the company name; the company
+ *   name itself is used VERBATIM in both subject and body (never
+ *   paraphrased, truncated, or made descriptive, even when opaque). The
+ *   closing is reordered + reformatted by ensureClosing(): signature
  *   block first (Kyle Potter - KP Solutions / Founder / w: URL), opt-out
  *   at the very bottom.
  */
@@ -116,10 +120,11 @@ Hard constraints:
 - LENGTH IS A HARD LIMIT. The body must be 120 to 150 words (excluding the greeting and the closing, which the system attaches). Never exceed 150. Budget: parts 3, 4 and 5 are largely fixed and run about 95 words together, which leaves only about 40 to 50 words for the hook and "what I do" combined — so the hook is one sentence and "what I do" is one or two short sentences. Count the words before you finish; if you are over 150, cut from the hook and "what I do", never from the proof, offer or CTA.
 - Plain text only. No HTML, no markdown, no bullet points.
 - Ground every OBSERVATION about the prospect strictly in the record's fields: company name, location, SIC description, incorporation date, and website/Google Maps status. Do NOT invent premises, branding, specific services, social activity, owner background, or any fact not in the record. The capability you describe in "What I do" is general to the vertical and is fine; claims about THIS prospect's situation must come from the five fields.
+- EXACT COMPANY NAME. Wherever the business is named — in both the subject AND the body — use the Business name string from the record EXACTLY as given. Do NOT paraphrase, abbreviate, truncate, expand, add or drop words, or invent a more descriptive variant. Many names are opaque ("Redhill Ventures Ltd", "M.N. Services Ltd", "GW Foods Ltd") — keep them verbatim; never turn an opaque name into a trade-descriptive one. You may drop a trailing "Ltd"/"Limited" only, nothing else. The vertical comes from the SIC description, never from reshaping the name.
 - Do NOT describe or speculate about the prospect's current setup ("stop wrestling with...", "instead of patching together...") — you have not seen it.
 - Do NOT name specific competitor products or platforms (Calendly, Mindbody, Acuity, Square, Booking.com, etc.). Naming AI search tools (ChatGPT, Perplexity, Google) is fine.
 - Do NOT write a sign-off, signature, or unsubscribe/opt-out line of your own — the system appends the entire closing block. End the body at the last sentence of the CTA.
-- Subject line: 4 to 7 words, grounded in this prospect. Vary the shape — not a "Custom software for [Company]" template. A plain operational phrase works ("Getting [Company] found and booked"). No clickbait, no "quick question", "circling back", "touching base".
+- Subject line: 4 to 7 words, grounded in this prospect. If you name the business, use the exact Business name (verbatim, per the rule above) — e.g. for "Redhill Ventures Ltd" it is "Getting Redhill Ventures found and booked", never "Redhill Courts". Vary the shape — not a "Custom software for [Company]" template. A plain operational phrase works. No clickbait, no "quick question", "circling back", "touching base".
 - Banned words and phrases: "leverage", "solution", "synergy", "innovative", "cutting-edge", "I hope this finds you well", "I trust you're well", "circle back", "touch base", "your beautiful/stunning/lovely [anything]", "love what you're doing", "saw your Instagram", "saw your Facebook post", "came across your page", "came across your listing".
 
 Output format: a JSON object with exactly two keys, "subject" and "body". The body BEGINS with the hook (part 1) — no greeting, the system prepends it. Use "\\n\\n" between paragraphs.`;

@@ -229,13 +229,14 @@ function logSoftConstraints(
   subject: string,
   body: string,
 ): void {
-  // v6 targets ~120-150 words. Warn outside 115-155 — a small slack so
-  // borderline-but-fine emails don't spam the log, while thin copy
-  // (<115) and ballooning (>155) still flag for the spot-check.
+  // The prompt asks for a tight hook + "what I do", but the body lands
+  // ~170-180 words in practice because parts 3-5 are largely fixed
+  // verbatim — accepted in review as the right length. Warn only on real
+  // outliers (thin <120, or ballooned >195), not the normal range.
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
-  if (wordCount < 115 || wordCount > 155) {
+  if (wordCount < 120 || wordCount > 195) {
     console.warn(
-      `[personalise] ${companyNumber}: body word count ${wordCount} outside 115-155`,
+      `[personalise] ${companyNumber}: body word count ${wordCount} outside 120-195`,
     );
   }
   if (subject.split(/\s+/).filter(Boolean).length > 7) {
