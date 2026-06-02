@@ -61,6 +61,7 @@ interface RankErrorRecord {
 export interface RankSummary {
   considered: number;
   ranked: number;
+  limitApplied: number | null;
   tokens: {
     input: number;
     cacheRead: number;
@@ -95,7 +96,28 @@ function extractPrefix(
     : null;
 }
 
-export async function rank(): Promise<RankSummary> {
+/**
+ * Rank unsurfaced prospects.
+ *
+ * @param options.limit  Dev spot-check aid only. When set, the candidate
+ *   pool is deterministically pre-trimmed to the top-N by fit weight
+ *   (then recency, then id) BEFORE the Opus call, so a reviewer can
+ *   score a representative subset without waiting on the full pool —
+ *   and without risking the 300s function ceiling. Production (the
+ *   Monday cron) calls rank() with no limit and ranks everything. The
+ *   trim is NOT a substitute for batching the full pool: that is a
+ *   separate pre-launch item (see the deferred-items log).
+ */
+export async function rank(
+  options: { limit?: number } = {},
+): Promise<RankSummary> {
+  const limit =
+    options.limit !== undefined &&
+    Number.isFinite(options.limit) &&
+    options.limit > 0
+      ? Math.floor(options.limit)
+      : null;
+
   const candidatesResult = await db()
     .from("prospects")
     .select(
@@ -105,7 +127,7 @@ export async function rank(): Promise<RankSummary> {
   if (candidatesResult.error) throw candidatesResult.error;
   const rows = candidatesResult.data ?? [];
 
-  const candidates: RankCandidate[] = rows.map((r) => ({
+  let candidates: RankCandidate[] = rows.map((r) => ({
     prospect_id: r.id,
     company_name: r.company_name,
     postcode: r.postcode,
@@ -120,6 +142,23 @@ export async function rank(): Promise<RankSummary> {
     director_name: r.director_name,
     incorporated_on: r.incorporated_on,
   }));
+
+  // Dev limit: deterministic top-N by fit weight, then recency, then id.
+  // Same ordering as the final tie-break so the subset is the strong-fit,
+  // recent cohort — the right sample to review the new positioning on.
+  if (limit !== null && candidates.length > limit) {
+    candidates = [...candidates]
+      .sort((a, b) => {
+        const fa = fitWeightForCode(a.sic_code) ?? 0;
+        const fb = fitWeightForCode(b.sic_code) ?? 0;
+        if (fb !== fa) return fb - fa;
+        const da = a.incorporated_on ?? "";
+        const db_ = b.incorporated_on ?? "";
+        if (da !== db_) return db_.localeCompare(da);
+        return a.prospect_id.localeCompare(b.prospect_id);
+      })
+      .slice(0, limit);
+  }
 
   const errorsByBucket: Record<string, number> = {};
   const errorExamples: RankErrorRecord[] = [];
@@ -138,6 +177,7 @@ export async function rank(): Promise<RankSummary> {
     return {
       considered: 0,
       ranked: 0,
+      limitApplied: limit,
       tokens: { input: 0, cacheRead: 0, cacheCreation: 0, output: 0 },
       estimatedCostGbp: 0,
       errors: { byBucket: errorsByBucket, examples: errorExamples },
@@ -195,6 +235,7 @@ export async function rank(): Promise<RankSummary> {
     return {
       considered: candidates.length,
       ranked: 0,
+      limitApplied: limit,
       tokens: {
         input: inputTokens,
         cacheRead: cacheReadTokens,
@@ -296,6 +337,7 @@ export async function rank(): Promise<RankSummary> {
   const summary: RankSummary = {
     considered: candidates.length,
     ranked,
+    limitApplied: limit,
     tokens: {
       input: inputTokens,
       cacheRead: cacheReadTokens,
@@ -310,6 +352,7 @@ export async function rank(): Promise<RankSummary> {
   console.log("[rank] summary", {
     considered: summary.considered,
     ranked: summary.ranked,
+    limitApplied: summary.limitApplied,
     tokens: summary.tokens,
     estimatedCostGbp: summary.estimatedCostGbp,
   });
