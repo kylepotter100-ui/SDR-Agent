@@ -97,28 +97,45 @@ function extractPrefix(
     : null;
 }
 
-const SIGN_OFF = "Kyle Potter — KP Solutions";
-const SIGNATURE_URL = "https://kpsolutions.io";
+const SIGN_OFF = "Kyle Potter - KP Solutions";
+const TITLE = "Founder";
+const WEBSITE_LINE = "w: https://kpsolutions.io";
 const UNSUBSCRIBE_EMAIL = "unsubscribe@kpsolutions.io";
 
-// Match any line containing the sign-off (em/en/hyphen, optional
-// trailing period), with optional surrounding whitespace.
+// Match the sign-off line. The [—–-] class covers em-dash, en-dash and
+// hyphen, so this strips BOTH the legacy v5 em-dash form and the v6
+// hyphen form. Optional trailing period, optional surrounding whitespace.
 const SIGN_OFF_LINE = /^[ \t]*Kyle Potter\s*[—–-]\s*KP Solutions\.?[ \t]*\r?\n?/gm;
+// Match the standalone "Founder" title line (v6 signature).
+const TITLE_LINE = /^[ \t]*Founder[ \t]*\r?\n?/gm;
 // Match any model-written opt-out/unsubscribe line so we don't
-// duplicate the canonical one we append. Covers "Reply STOP..." (the
-// prior wording) and any line mentioning unsubscribe.
+// duplicate the canonical one we append. Covers "Reply STOP..." and any
+// line mentioning unsubscribe — including both the legacy "...from
+// us?..." and the v6 "...from me?..." opt-out.
 const OPT_OUT_LINE = /^[ \t]*(?:Reply STOP|.*\bunsubscrib)[^\n]*\r?\n?/gim;
-// Match a previously-appended signature URL line so re-runs don't
-// orphan or duplicate it. Both http/https, optional www, optional
-// trailing slash.
-const SIGNATURE_URL_LINE = /^[ \t]*https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*\r?\n?/gim;
+// Match a previously-appended website/signature URL line so re-runs
+// don't orphan or duplicate it. Tolerates an optional "w:" prefix (v6
+// form) as well as a bare URL (legacy form). http/https, optional www,
+// optional trailing slash.
+const SIGNATURE_URL_LINE = /^[ \t]*(?:w:\s*)?https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*\r?\n?/gim;
 
 /**
  * Sole owner of the email's closing. The model is told not to write an
  * opt-out or sign-off of its own, but enforce it anyway: strip any
- * opt-out/unsubscribe and sign-off lines the model emitted, then
- * append the canonical closing — blank line, plain-text unsubscribe,
- * blank line, sign-off.
+ * sign-off, title, website and opt-out lines the model (or a prior run)
+ * emitted, then append the canonical v6 closing — signature block first
+ * (name, title, website), then a blank line, then the opt-out at the
+ * very bottom:
+ *
+ *   Kyle Potter - KP Solutions
+ *   Founder
+ *   w: https://kpsolutions.io
+ *
+ *   Prefer not to hear from me? Email unsubscribe@kpsolutions.io
+ *
+ * Idempotent: every line of the appended block is matched by one of the
+ * four strips above, and trimEnd clears trailing blanks before
+ * re-appending, so re-running yields one signature block + one opt-out.
  *
  * The unsubscribe is a bare email address (not an HTML <a> tag) so it
  * survives the Phase 1 copy-paste-into-Outlook workflow: Outlook and
@@ -129,11 +146,12 @@ const SIGNATURE_URL_LINE = /^[ \t]*https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*
 function ensureClosing(body: string): string {
   const stripped = body
     .replace(SIGN_OFF_LINE, "")
-    .replace(OPT_OUT_LINE, "")
+    .replace(TITLE_LINE, "")
     .replace(SIGNATURE_URL_LINE, "")
+    .replace(OPT_OUT_LINE, "")
     .trimEnd();
-  const optOut = `Prefer not to hear from us? Email ${UNSUBSCRIBE_EMAIL}`;
-  return `${stripped}\n\n${optOut}\n\n${SIGN_OFF}\n${SIGNATURE_URL}`;
+  const optOut = `Prefer not to hear from me? Email ${UNSUBSCRIBE_EMAIL}`;
+  return `${stripped}\n\n${SIGN_OFF}\n${TITLE}\n${WEBSITE_LINE}\n\n${optOut}`;
 }
 
 function logSoftConstraints(
@@ -141,10 +159,13 @@ function logSoftConstraints(
   subject: string,
   body: string,
 ): void {
+  // v6 targets ~120-150 words. Warn outside 115-155 — a small slack so
+  // borderline-but-fine emails don't spam the log, while thin copy
+  // (<115) and ballooning (>155) still flag for the spot-check.
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
-  if (wordCount < 60 || wordCount > 120) {
+  if (wordCount < 115 || wordCount > 155) {
     console.warn(
-      `[personalise] ${companyNumber}: body word count ${wordCount} outside 60-120`,
+      `[personalise] ${companyNumber}: body word count ${wordCount} outside 115-155`,
     );
   }
   if (subject.split(/\s+/).filter(Boolean).length > 7) {
