@@ -143,7 +143,7 @@ const SIGNATURE_URL_LINE = /^[ \t]*(?:w:\s*)?https?:\/\/(?:www\.)?kpsolutions\.i
  * both the digest and the sent message. Phase 3 send-from-app can
  * upgrade to a styled link.
  */
-function ensureClosing(body: string): string {
+export function ensureClosing(body: string): string {
   const stripped = body
     .replace(SIGN_OFF_LINE, "")
     .replace(TITLE_LINE, "")
