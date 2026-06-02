@@ -60,7 +60,15 @@ const USD_TO_GBP = 0.79;
 const RankingSchema = z.object({
   rankings: z.array(
     z.object({
-      prospect_id: z.string().uuid(),
+      // Deliberately NOT .uuid(). messages.parse validates the whole
+      // rankings array atomically, so a single malformed id would throw
+      // out every ranking in the chunk (observed: Opus emitted one bad
+      // id and we lost all 56). The .uuid() format constraint isn't
+      // reliably enforced at generation anyway. The real guard is the
+      // byId membership check in the scoring loop below, which buckets a
+      // bad/hallucinated id as a single "validation" error and skips
+      // only that row.
+      prospect_id: z.string().min(1),
       score: z.number(),
       reasoning: z.string().min(1),
     }),
@@ -326,12 +334,18 @@ export async function rank(
     chunksFailed++;
     const err = result.reason;
     const message = err instanceof Error ? err.message : String(err);
-    const status =
-      err instanceof Anthropic.APIError ? err.status : undefined;
     console.error(
       `[rank] chunk ${chunkIndex + 1}/${chunks.length} failed — ${message}`,
     );
-    recordError({ stage: "anthropic", status, message });
+    if (err instanceof Anthropic.APIError) {
+      // Genuine transport/API failure. APIConnectionError carries no
+      // status → buckets as "network"; HTTP errors → anthropic_<status>.
+      recordError({ stage: "anthropic", status: err.status, message });
+    } else {
+      // Structured-output parse failure (or missing parsed_output) — an
+      // output problem, not a transport one. Don't mislabel it "network".
+      recordError({ stage: "validation", message });
+    }
   });
 
   const byId = new Map(candidates.map((c) => [c.prospect_id, c]));
