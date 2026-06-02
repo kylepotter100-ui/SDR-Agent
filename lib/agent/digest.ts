@@ -269,7 +269,11 @@ async function selectEligible(): Promise<{
     .not("personalised_email_body", "is", null)
     .not("status", "in", STATUS_EXCLUDED_FILTER)
     .order("ranking_score", { ascending: false })
-    .order("sic_tier", { ascending: true })
+    // fit_weight, not sic_tier: tier numbers are not in fit-weight order
+    // (Tier 5 = 0.8 outranks Tiers 3/4 = 0.7/0.6). nullsFirst: false is
+    // belt-and-braces — the column is NOT NULL in the schema and enrich
+    // populates it on insert.
+    .order("fit_weight", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: true })
     .limit(ELIGIBLE_FETCH_LIMIT);
   if (result.error) throw result.error;
