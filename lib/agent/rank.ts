@@ -1,16 +1,23 @@
 /**
  * Ranking agent.
  *
- * Selects all prospects not yet surfaced in a digest, calls Opus 4.7
- * once with the full list and the rubric from lib/prompts/rank.ts,
- * parses the JSON {prospect_id, score, reasoning} array via Zod,
- * persists each score + reasoning on the prospect, and returns the
- * top 15 by score for the digest layer to consume.
+ * Selects all prospects not yet surfaced in a digest, scores them via
+ * Opus 4.7, persists each score + reasoning, and returns the top 15
+ * (review sample) for the digest layer to consume.
  *
- * Scores are clamped 0-100. Website-found prospects are NOT capped
- * any more — the prompt now scores them in a 45-70 band (deliberately
- * below the no-website classes but reachable), because the personaliser
- * has a tailored pitch for them.
+ * Why this is batched: a single Opus call over the full unsurfaced pool
+ * exceeds the 300s function ceiling — Opus emits ~70 reasoning tokens
+ * per prospect sequentially within one response, so wall-clock scales
+ * with total output. We partition the pool into chunks of CHUNK_SIZE
+ * and run them as INDEPENDENT CONCURRENT requests, so wall-clock
+ * collapses to ≈ max(chunk) rather than the sum. The ranker scores
+ * each prospect on an ABSOLUTE rubric (signal class + SIC tier +
+ * recency + director known), not relative to other prospects in the
+ * call — so partitioning is semantically lossless. Top-15 selection
+ * runs once over the merged set after all chunks return.
+ *
+ * Scores are clamped 0-100. Website-found prospects are NOT capped —
+ * the prompt scores them in a 45-70 band.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -32,6 +39,16 @@ import {
 
 const MAX_OUTPUT_TOKENS = 16000;
 const TOP_N = 15;
+
+// Step 0 empirical: 56-chunk @ effort medium ≈ 107s end-to-end. Three
+// concurrent chunks fit comfortably inside the 300s ceiling with ~190s
+// margin. If chunk timing degrades materially, shrink this first.
+const CHUNK_SIZE = 56;
+
+// Bounded in-flight cap so a future large pool (≥336 prospects =
+// 6 chunks) can't fire enough concurrent Anthropic requests to trip
+// rate limits. At current volume (~167, 3 chunks) the cap never binds.
+const MAX_CONCURRENCY = 6;
 
 // Opus 4.7 list pricing — USD per million tokens.
 const PRICE_USD_PER_M_INPUT = 5;
@@ -96,17 +113,117 @@ function extractPrefix(
     : null;
 }
 
+// Deterministic ordering used both to slice the dev ?limit subset AND
+// to partition the production pool into chunks. Stable across re-runs:
+// fit weight desc → incorporation date desc (newer first) → id asc.
+function byFitThenRecencyThenId(a: RankCandidate, b: RankCandidate): number {
+  const fa = fitWeightForCode(a.sic_code) ?? 0;
+  const fb = fitWeightForCode(b.sic_code) ?? 0;
+  if (fb !== fa) return fb - fa;
+  const da = a.incorporated_on ?? "";
+  const db_ = b.incorporated_on ?? "";
+  if (da !== db_) return db_.localeCompare(da);
+  return a.prospect_id.localeCompare(b.prospect_id);
+}
+
+function chunkArray<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
+// Bounded-concurrency runner over Promise.allSettled semantics: never
+// throws; preserves input order; caps in-flight work at `concurrency`.
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        results[i] = { status: "fulfilled", value: await worker(items[i], i) };
+      } catch (err) {
+        results[i] = { status: "rejected", reason: err };
+      }
+    }
+  };
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    run,
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+interface ChunkResult {
+  rankings: Array<{
+    prospect_id: string;
+    score: number;
+    reasoning: string;
+  }>;
+  usage: {
+    input: number;
+    cacheRead: number;
+    cacheCreation: number;
+    output: number;
+  };
+}
+
+// Single Opus call over one chunk. Throws on API error or missing
+// parsed_output so the caller's allSettled wrapper buckets the failure.
+async function rankChunk(
+  candidates: RankCandidate[],
+): Promise<ChunkResult> {
+  const response = await claude().messages.parse({
+    model: OPUS_MODEL_ID,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    thinking: { type: "disabled" },
+    output_config: {
+      effort: "medium",
+      format: zodOutputFormat(RankingSchema),
+    },
+    system: [
+      {
+        type: "text",
+        text: RANKING_SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: rankUserPrompt(candidates) }],
+  });
+
+  if (!response.parsed_output) {
+    throw new Error(
+      `Structured output unavailable (stop_reason=${response.stop_reason})`,
+    );
+  }
+
+  return {
+    rankings: response.parsed_output.rankings,
+    usage: {
+      input: response.usage.input_tokens,
+      cacheRead: response.usage.cache_read_input_tokens ?? 0,
+      cacheCreation: response.usage.cache_creation_input_tokens ?? 0,
+      output: response.usage.output_tokens,
+    },
+  };
+}
+
 /**
  * Rank unsurfaced prospects.
  *
  * @param options.limit  Dev spot-check aid only. When set, the candidate
- *   pool is deterministically pre-trimmed to the top-N by fit weight
- *   (then recency, then id) BEFORE the Opus call, so a reviewer can
- *   score a representative subset without waiting on the full pool —
- *   and without risking the 300s function ceiling. Production (the
- *   Monday cron) calls rank() with no limit and ranks everything. The
- *   trim is NOT a substitute for batching the full pool: that is a
- *   separate pre-launch item (see the deferred-items log).
+ *   pool is deterministically pre-trimmed to the top-N (by fit weight,
+ *   then recency, then id) BEFORE chunking. Production calls rank() with
+ *   no limit and ranks the full pool — every prospect lands in exactly
+ *   one chunk, no overlap, no gap, nobody dropped.
  */
 export async function rank(
   options: { limit?: number } = {},
@@ -127,37 +244,29 @@ export async function rank(
   if (candidatesResult.error) throw candidatesResult.error;
   const rows = candidatesResult.data ?? [];
 
-  let candidates: RankCandidate[] = rows.map((r) => ({
-    prospect_id: r.id,
-    company_name: r.company_name,
-    postcode: r.postcode,
-    postcode_prefix: extractPrefix(r.postcode),
-    sic_code: r.sic_code,
-    sic_description: r.sic_description,
-    sic_tier: r.sic_tier,
-    observable_signal: r.observable_signal,
-    has_website: r.has_website,
-    website_url: r.website_url,
-    facebook_url: r.facebook_url,
-    director_name: r.director_name,
-    incorporated_on: r.incorporated_on,
-  }));
+  // Sort the full pool deterministically. Used both for the dev limit
+  // slice and for chunk boundaries — partition reproducibility matters
+  // for debugging, even though scoring is order-independent.
+  let candidates: RankCandidate[] = rows
+    .map((r) => ({
+      prospect_id: r.id,
+      company_name: r.company_name,
+      postcode: r.postcode,
+      postcode_prefix: extractPrefix(r.postcode),
+      sic_code: r.sic_code,
+      sic_description: r.sic_description,
+      sic_tier: r.sic_tier,
+      observable_signal: r.observable_signal,
+      has_website: r.has_website,
+      website_url: r.website_url,
+      facebook_url: r.facebook_url,
+      director_name: r.director_name,
+      incorporated_on: r.incorporated_on,
+    }))
+    .sort(byFitThenRecencyThenId);
 
-  // Dev limit: deterministic top-N by fit weight, then recency, then id.
-  // Same ordering as the final tie-break so the subset is the strong-fit,
-  // recent cohort — the right sample to review the new positioning on.
   if (limit !== null && candidates.length > limit) {
-    candidates = [...candidates]
-      .sort((a, b) => {
-        const fa = fitWeightForCode(a.sic_code) ?? 0;
-        const fb = fitWeightForCode(b.sic_code) ?? 0;
-        if (fb !== fa) return fb - fa;
-        const da = a.incorporated_on ?? "";
-        const db_ = b.incorporated_on ?? "";
-        if (da !== db_) return db_.localeCompare(da);
-        return a.prospect_id.localeCompare(b.prospect_id);
-      })
-      .slice(0, limit);
+    candidates = candidates.slice(0, limit);
   }
 
   const errorsByBucket: Record<string, number> = {};
@@ -185,68 +294,45 @@ export async function rank(
     };
   }
 
+  // Clean partition of the full sorted pool.
+  const chunks = chunkArray(candidates, CHUNK_SIZE);
+
+  const settled = await runWithConcurrency(
+    chunks,
+    MAX_CONCURRENCY,
+    (chunk) => rankChunk(chunk),
+  );
+
   let inputTokens = 0;
   let cacheReadTokens = 0;
   let cacheCreationTokens = 0;
   let outputTokens = 0;
-  let rankings: Array<{
+  const rankings: Array<{
     prospect_id: string;
     score: number;
     reasoning: string;
   }> = [];
+  let chunksFailed = 0;
 
-  try {
-    const response = await claude().messages.parse({
-      model: OPUS_MODEL_ID,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      thinking: { type: "disabled" },
-      output_config: {
-        effort: "medium",
-        format: zodOutputFormat(RankingSchema),
-      },
-      system: [
-        {
-          type: "text",
-          text: RANKING_SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [
-        { role: "user", content: rankUserPrompt(candidates) },
-      ],
-    });
-    inputTokens = response.usage.input_tokens;
-    cacheReadTokens = response.usage.cache_read_input_tokens ?? 0;
-    cacheCreationTokens = response.usage.cache_creation_input_tokens ?? 0;
-    outputTokens = response.usage.output_tokens;
-
-    if (!response.parsed_output) {
-      throw new Error(
-        `Structured output unavailable (stop_reason=${response.stop_reason})`,
-      );
+  settled.forEach((result, chunkIndex) => {
+    if (result.status === "fulfilled") {
+      inputTokens += result.value.usage.input;
+      cacheReadTokens += result.value.usage.cacheRead;
+      cacheCreationTokens += result.value.usage.cacheCreation;
+      outputTokens += result.value.usage.output;
+      rankings.push(...result.value.rankings);
+      return;
     }
-    rankings = response.parsed_output.rankings;
-  } catch (err) {
+    chunksFailed++;
+    const err = result.reason;
     const message = err instanceof Error ? err.message : String(err);
     const status =
       err instanceof Anthropic.APIError ? err.status : undefined;
-    console.error(`[rank] anthropic call failed — ${message}`);
+    console.error(
+      `[rank] chunk ${chunkIndex + 1}/${chunks.length} failed — ${message}`,
+    );
     recordError({ stage: "anthropic", status, message });
-    return {
-      considered: candidates.length,
-      ranked: 0,
-      limitApplied: limit,
-      tokens: {
-        input: inputTokens,
-        cacheRead: cacheReadTokens,
-        cacheCreation: cacheCreationTokens,
-        output: outputTokens,
-      },
-      estimatedCostGbp: 0,
-      errors: { byBucket: errorsByBucket, examples: errorExamples },
-      top15: [],
-    };
-  }
+  });
 
   const byId = new Map(candidates.map((c) => [c.prospect_id, c]));
 
@@ -283,15 +369,11 @@ export async function rank(
       observable_signal: prospect.observable_signal,
       has_website: prospect.has_website,
       sic_tier: prospect.sic_tier,
-      // Real fit weight — tier numbers are NOT in fit-weight order
-      // (Tier 5 = 0.8 outranks Tiers 3/4). Sorting by -sic_tier would
-      // bury Tier 5; fitWeightForCode reads the authoritative weight.
       fit_weight: fitWeightForCode(prospect.sic_code) ?? 0,
       created_at_order: createdOrder++,
     });
   }
 
-  // Persist scores in parallel — small set, single round-trip-ish.
   let ranked = 0;
   for (const s of scored) {
     const upd = await db()
@@ -353,6 +435,8 @@ export async function rank(
     considered: summary.considered,
     ranked: summary.ranked,
     limitApplied: summary.limitApplied,
+    chunks: chunks.length,
+    chunksFailed,
     tokens: summary.tokens,
     estimatedCostGbp: summary.estimatedCostGbp,
   });
