@@ -97,28 +97,45 @@ function extractPrefix(
     : null;
 }
 
-const SIGN_OFF = "Kyle Potter — KP Solutions";
-const SIGNATURE_URL = "https://kpsolutions.io";
+const SIGN_OFF = "Kyle Potter - KP Solutions";
+const TITLE = "Founder";
+const WEBSITE_LINE = "w: https://kpsolutions.io";
 const UNSUBSCRIBE_EMAIL = "unsubscribe@kpsolutions.io";
 
-// Match any line containing the sign-off (em/en/hyphen, optional
-// trailing period), with optional surrounding whitespace.
+// Match the sign-off line. The [—–-] class covers em-dash, en-dash and
+// hyphen, so this strips BOTH the legacy v5 em-dash form and the v6
+// hyphen form. Optional trailing period, optional surrounding whitespace.
 const SIGN_OFF_LINE = /^[ \t]*Kyle Potter\s*[—–-]\s*KP Solutions\.?[ \t]*\r?\n?/gm;
+// Match the standalone "Founder" title line (v6 signature).
+const TITLE_LINE = /^[ \t]*Founder[ \t]*\r?\n?/gm;
 // Match any model-written opt-out/unsubscribe line so we don't
-// duplicate the canonical one we append. Covers "Reply STOP..." (the
-// prior wording) and any line mentioning unsubscribe.
+// duplicate the canonical one we append. Covers "Reply STOP..." and any
+// line mentioning unsubscribe — including both the legacy "...from
+// us?..." and the v6 "...from me?..." opt-out.
 const OPT_OUT_LINE = /^[ \t]*(?:Reply STOP|.*\bunsubscrib)[^\n]*\r?\n?/gim;
-// Match a previously-appended signature URL line so re-runs don't
-// orphan or duplicate it. Both http/https, optional www, optional
-// trailing slash.
-const SIGNATURE_URL_LINE = /^[ \t]*https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*\r?\n?/gim;
+// Match a previously-appended website/signature URL line so re-runs
+// don't orphan or duplicate it. Tolerates an optional "w:" prefix (v6
+// form) as well as a bare URL (legacy form). http/https, optional www,
+// optional trailing slash.
+const SIGNATURE_URL_LINE = /^[ \t]*(?:w:\s*)?https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*\r?\n?/gim;
 
 /**
  * Sole owner of the email's closing. The model is told not to write an
  * opt-out or sign-off of its own, but enforce it anyway: strip any
- * opt-out/unsubscribe and sign-off lines the model emitted, then
- * append the canonical closing — blank line, plain-text unsubscribe,
- * blank line, sign-off.
+ * sign-off, title, website and opt-out lines the model (or a prior run)
+ * emitted, then append the canonical v6 closing — signature block first
+ * (name, title, website), then a blank line, then the opt-out at the
+ * very bottom:
+ *
+ *   Kyle Potter - KP Solutions
+ *   Founder
+ *   w: https://kpsolutions.io
+ *
+ *   Prefer not to hear from me? Email unsubscribe@kpsolutions.io
+ *
+ * Idempotent: every line of the appended block is matched by one of the
+ * four strips above, and trimEnd clears trailing blanks before
+ * re-appending, so re-running yields one signature block + one opt-out.
  *
  * The unsubscribe is a bare email address (not an HTML <a> tag) so it
  * survives the Phase 1 copy-paste-into-Outlook workflow: Outlook and
@@ -126,14 +143,85 @@ const SIGNATURE_URL_LINE = /^[ \t]*https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*
  * both the digest and the sent message. Phase 3 send-from-app can
  * upgrade to a styled link.
  */
-function ensureClosing(body: string): string {
+export function ensureClosing(body: string): string {
   const stripped = body
     .replace(SIGN_OFF_LINE, "")
-    .replace(OPT_OUT_LINE, "")
+    .replace(TITLE_LINE, "")
     .replace(SIGNATURE_URL_LINE, "")
+    .replace(OPT_OUT_LINE, "")
     .trimEnd();
-  const optOut = `Prefer not to hear from us? Email ${UNSUBSCRIBE_EMAIL}`;
-  return `${stripped}\n\n${optOut}\n\n${SIGN_OFF}\n${SIGNATURE_URL}`;
+  const optOut = `Prefer not to hear from me? Email ${UNSUBSCRIBE_EMAIL}`;
+  return `${stripped}\n\n${SIGN_OFF}\n${TITLE}\n${WEBSITE_LINE}\n\n${optOut}`;
+}
+
+// Honorific/title tokens to skip when scanning for a forename. Trailing
+// periods are stripped before lookup ("Dr." -> "dr").
+const NAME_TITLES = new Set([
+  "dr",
+  "mr",
+  "mrs",
+  "ms",
+  "miss",
+  "mx",
+  "prof",
+  "professor",
+  "sir",
+  "dame",
+  "lord",
+  "lady",
+  "rev",
+  "reverend",
+  "capt",
+  "captain",
+  "major",
+  "col",
+  "colonel",
+]);
+
+// A greeting line the model may have written despite instructions. Anchored
+// to the first line and required to end in a comma, so a hook sentence that
+// merely begins with one of these words is not mistaken for a salutation.
+const LEADING_GREETING = /^[ \t]*(?:Hi|Hello|Hey|Dear)\b[^\n]*,[ \t]*\r?\n+/i;
+
+/**
+ * Deterministic first-name extraction for the greeting. The greeting is the
+ * highest-risk element: the model writes excellent forenames but will not
+ * reliably DROP on ambiguous input, so we own it in code rather than trust
+ * the prompt.
+ *
+ * Exploits the Companies House convention that a forename is mixed-case
+ * (contains a lowercase letter) while a surname is ALL CAPS. We return the
+ * first token that contains a lowercase letter and is not an honorific —
+ * comma-ordered ("SMITH, Jonathan"), space-ordered ("Sarah Jane WHITMORE"),
+ * title-noised ("Alexey, Dr PETERNEV" -> "Alexey") and single-token
+ * ("Mxolisi") names all resolve. When no token qualifies — an all-caps pair
+ * like "ZHANG WEI", or a null/blank name — we return null and the greeting
+ * is dropped. We never guess.
+ */
+export function extractForename(directorName: string | null): string | null {
+  if (!directorName) return null;
+  const tokens = directorName.split(/[\s,]+/).filter(Boolean);
+  for (const token of tokens) {
+    const bare = token.replace(/\.$/, "").toLowerCase();
+    if (NAME_TITLES.has(bare)) continue;
+    // Mixed-case (has a lowercase letter) and starts with a letter: a
+    // forename by CH convention. ALL-CAPS surnames are skipped.
+    if (/^[A-Za-z]/.test(token) && /[a-z]/.test(token)) return token;
+  }
+  return null;
+}
+
+/**
+ * Prepend the deterministic greeting (or none) to the model body. Strips any
+ * salutation the model emitted first, so the code is the sole owner of the
+ * greeting just as ensureClosing owns the closing.
+ */
+export function prependGreeting(
+  forename: string | null,
+  body: string,
+): string {
+  const stripped = body.replace(LEADING_GREETING, "").replace(/^\s+/, "");
+  return forename ? `Hi ${forename},\n\n${stripped}` : stripped;
 }
 
 function logSoftConstraints(
@@ -141,10 +229,14 @@ function logSoftConstraints(
   subject: string,
   body: string,
 ): void {
+  // The prompt asks for a tight hook + "what I do", but the body lands
+  // ~170-180 words in practice because parts 3-5 are largely fixed
+  // verbatim — accepted in review as the right length. Warn only on real
+  // outliers (thin <120, or ballooned >195), not the normal range.
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
-  if (wordCount < 60 || wordCount > 120) {
+  if (wordCount < 120 || wordCount > 195) {
     console.warn(
-      `[personalise] ${companyNumber}: body word count ${wordCount} outside 60-120`,
+      `[personalise] ${companyNumber}: body word count ${wordCount} outside 120-195`,
     );
   }
   if (subject.split(/\s+/).filter(Boolean).length > 7) {
@@ -279,8 +371,11 @@ export async function personalise(): Promise<PersonalisationSummary> {
       continue;
     }
 
+    // Word budget (120-150) is measured on the model body, before the
+    // deterministic greeting and closing the system owns are attached.
     logSoftConstraints(prospect.company_number, subject, body);
-    body = ensureClosing(body);
+    const forename = extractForename(prospect.director_name);
+    body = ensureClosing(prependGreeting(forename, body));
 
     const upd = await db()
       .from("prospects")
