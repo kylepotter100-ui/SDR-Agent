@@ -135,6 +135,26 @@ export async function addNote(id: string, body: string) {
   revalidatePath(`/dashboard/prospects/${id}`);
 }
 
+export async function saveDraft(id: string, subject: string, body: string) {
+  const s = subject.trim();
+  const b = body.trim();
+  if (!s || !b) throw new Error("Subject and body are required");
+  const supabase = await requireSession();
+
+  const { error } = await supabase
+    .from("prospects")
+    .update({
+      personalised_email_subject: s,
+      personalised_email_body: b,
+      last_action_at: new Date().toISOString(),
+      last_action_by: ACTOR,
+    })
+    .eq("id", id);
+  if (error) throw error;
+
+  revalidateProspect(id);
+}
+
 export async function markSent(
   id: string,
   sentAtISO: string | null,

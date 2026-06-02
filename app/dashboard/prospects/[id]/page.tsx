@@ -2,14 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  getSuppressedEmails,
+  isSuppressed,
+  STATUS_EXCLUDED,
+} from "@/lib/agent/suppression";
 import { StatusPill } from "@/components/ui/badge";
-import { CopyButton } from "@/components/ui/copy-button";
 import { StatusSelect } from "@/components/dashboard/status-select";
 import { ProspectActions } from "@/components/dashboard/prospect-actions";
 import { AddNoteDialog } from "@/components/dashboard/add-note-dialog";
 import { MarkSentDialog } from "@/components/dashboard/mark-sent-dialog";
 import { LogReplyDialog } from "@/components/dashboard/log-reply-dialog";
 import { SuppressButton } from "@/components/dashboard/suppress-button";
+import { DraftEditor } from "@/components/dashboard/draft-editor";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
@@ -62,7 +67,7 @@ export default async function ProspectDetailPage({
   }
   if (!p) notFound();
 
-  const [{ data: notes }, { data: sends }, { data: replies }] =
+  const [{ data: notes }, { data: sends }, { data: replies }, suppressed] =
     await Promise.all([
       supabase
         .from("prospect_notes")
@@ -79,12 +84,27 @@ export default async function ProspectDetailPage({
         .select("id, received_at, body, sentiment")
         .eq("prospect_id", id)
         .order("received_at", { ascending: false }),
+      getSuppressedEmails(),
     ]);
 
   const hasDraft = Boolean(p.personalised_email_subject && p.personalised_email_body);
-  const draftPlain = hasDraft
-    ? `Subject: ${p.personalised_email_subject}\n\n${p.personalised_email_body}`
-    : "";
+
+  // Send guard. STATUS_EXCLUDED already groups opted_out/ignored/dead;
+  // suppression entries are lowercased on insert so the membership
+  // check needs the same normalisation. `sent` is not in STATUS_EXCLUDED
+  // — re-compose stays allowed; the visible status carries the warning.
+  const directorEmailLower =
+    p.director_email?.trim().toLowerCase() ?? null;
+  const blockReason: string | null = !p.director_email
+    ? "Awaiting Apollo enrichment"
+    : (STATUS_EXCLUDED as string[]).includes(p.status)
+      ? "Suppressed / opted out"
+      : isSuppressed(directorEmailLower, suppressed)
+        ? "Suppressed / opted out"
+        : !hasDraft
+          ? "No draft yet"
+          : null;
+  const canCompose = blockReason === null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -198,26 +218,25 @@ export default async function ProspectDetailPage({
 
         {/* Email draft */}
         <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-              Personalised draft
-            </span>
-            {hasDraft && <CopyButton text={draftPlain} label="Copy draft" />}
-          </div>
           {hasDraft ? (
-            <>
-              <div className="text-sm font-semibold text-neutral-900">
-                {p.personalised_email_subject}
-              </div>
-              <pre className="whitespace-pre-wrap break-words rounded-md bg-neutral-50 p-3 font-mono text-[13px] leading-relaxed text-neutral-800">
-                {p.personalised_email_body}
-              </pre>
-            </>
+            <DraftEditor
+              id={p.id}
+              subject={p.personalised_email_subject ?? ""}
+              body={p.personalised_email_body ?? ""}
+              directorEmail={p.director_email}
+              canCompose={canCompose}
+              blockReason={blockReason}
+            />
           ) : (
-            <p className="rounded-md bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
-              Personalisation pending — the agent hasn&rsquo;t written a draft
-              for this prospect yet.
-            </p>
+            <>
+              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Personalised draft
+              </span>
+              <p className="rounded-md bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
+                Personalisation pending — the agent hasn&rsquo;t written a draft
+                for this prospect yet.
+              </p>
+            </>
           )}
         </div>
       </div>

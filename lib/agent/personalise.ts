@@ -98,6 +98,7 @@ function extractPrefix(
 }
 
 const SIGN_OFF = "Kyle Potter — KP Solutions";
+const SIGNATURE_URL = "https://kpsolutions.io";
 const UNSUBSCRIBE_EMAIL = "unsubscribe@kpsolutions.io";
 
 // Match any line containing the sign-off (em/en/hyphen, optional
@@ -107,6 +108,10 @@ const SIGN_OFF_LINE = /^[ \t]*Kyle Potter\s*[—–-]\s*KP Solutions\.?[ \t]*\r?
 // duplicate the canonical one we append. Covers "Reply STOP..." (the
 // prior wording) and any line mentioning unsubscribe.
 const OPT_OUT_LINE = /^[ \t]*(?:Reply STOP|.*\bunsubscrib)[^\n]*\r?\n?/gim;
+// Match a previously-appended signature URL line so re-runs don't
+// orphan or duplicate it. Both http/https, optional www, optional
+// trailing slash.
+const SIGNATURE_URL_LINE = /^[ \t]*https?:\/\/(?:www\.)?kpsolutions\.io\/?[ \t]*\r?\n?/gim;
 
 /**
  * Sole owner of the email's closing. The model is told not to write an
@@ -125,9 +130,10 @@ function ensureClosing(body: string): string {
   const stripped = body
     .replace(SIGN_OFF_LINE, "")
     .replace(OPT_OUT_LINE, "")
+    .replace(SIGNATURE_URL_LINE, "")
     .trimEnd();
   const optOut = `Prefer not to hear from us? Email ${UNSUBSCRIBE_EMAIL}`;
-  return `${stripped}\n\n${optOut}\n\n${SIGN_OFF}`;
+  return `${stripped}\n\n${optOut}\n\n${SIGN_OFF}\n${SIGNATURE_URL}`;
 }
 
 function logSoftConstraints(
