@@ -201,7 +201,11 @@ export async function rank(
       max_tokens: MAX_OUTPUT_TOKENS,
       thinking: { type: "disabled" },
       output_config: {
-        effort: "medium",
+        // Experiment (a): dropped medium -> low to test whether the full
+        // unsurfaced pool (~167) ranks inside the 300s function ceiling.
+        // If it still times out, low is no reprieve and batching (b) is
+        // the answer; if it fits, we re-time and judge reasoning quality.
+        effort: "low",
         format: zodOutputFormat(RankingSchema),
       },
       system: [
