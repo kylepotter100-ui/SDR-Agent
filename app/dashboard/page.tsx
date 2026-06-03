@@ -7,7 +7,7 @@ import { PROSPECT_STATUSES } from "@/lib/dashboard/filters";
 import type { ProspectStatus } from "@/lib/db.types";
 
 const FOCUS_SELECT =
-  "id, company_name, postcode, status, observable_signal, last_action_at";
+  "id, company_name, postcode, status, observable_signal, last_action_at, ranking_score, director_email";
 
 function windowBounds() {
   const now = Date.now();
@@ -23,12 +23,15 @@ export default async function DashboardHome() {
 
   const [statusRes, surfacedRes, awaitingRes, recentRes] = await Promise.all([
     supabase.from("prospects").select("status").limit(5000),
+    // Actionable queue — best-rank first (nullsLast so unranked rows still
+    // appear but sink), surfaced_in_digest_at desc as tiebreak.
     supabase
       .from("prospects")
       .select(FOCUS_SELECT)
       .not("surfaced_in_digest_at", "is", null)
       .in("status", ["new", "surfaced"])
       .order("ranking_score", { ascending: false, nullsFirst: false })
+      .order("surfaced_in_digest_at", { ascending: false })
       .limit(50),
     supabase
       .from("prospects")
@@ -52,30 +55,40 @@ export default async function DashboardHome() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold text-neutral-900">Pipeline</h1>
+      <div className="flex items-baseline justify-between">
+        <h1 className="font-serif text-2xl tracking-tight text-brand-near-black">
+          Pipeline
+        </h1>
+        <span className="font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
+          Overview
+        </span>
+      </div>
 
-      {/* Counter strip */}
+      {/* Actionable now — promoted to the headline. Best-rank first. */}
+      <FocusList
+        title="Actionable now"
+        rows={(surfacedRes.data ?? []) as FocusRow[]}
+        empty="Nothing waiting — surfaced prospects have all been actioned."
+        showRank
+      />
+
+      {/* Counter strip — every status, filtered link-through. */}
       <div className="flex flex-wrap gap-2">
         {PROSPECT_STATUSES.map((s: ProspectStatus) => (
           <Link
             key={s}
             href={`/dashboard/prospects?status=${s}`}
-            className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 hover:bg-neutral-50"
+            className="flex items-center gap-2 rounded-md border border-brand-near-black/10 bg-white/60 px-3 py-2 transition-colors hover:bg-white"
           >
             <StatusPill status={s} />
-            <span className="text-sm font-semibold text-neutral-900">
+            <span className="font-mono text-sm font-semibold text-brand-near-black">
               {counts[s] ?? 0}
             </span>
           </Link>
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <FocusList
-          title="Surfaced, not yet sent"
-          rows={(surfacedRes.data ?? []) as FocusRow[]}
-          empty="Nothing waiting — surfaced prospects have all been actioned."
-        />
+      <div className="grid gap-4 lg:grid-cols-2">
         <FocusList
           title="Awaiting reply"
           rows={(awaitingRes.data ?? []) as FocusRow[]}
