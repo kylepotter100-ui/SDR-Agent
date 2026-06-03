@@ -3,15 +3,17 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import type { ProspectStatus } from "@/lib/db.types";
 
+// Semantic colour mapping preserved; saturations tuned for the cream
+// surface and text bumped to 800/900 for AA contrast.
 const STATUS_STYLES: Record<ProspectStatus, string> = {
-  new: "bg-neutral-100 text-neutral-700",
-  surfaced: "bg-blue-100 text-blue-800",
-  sent: "bg-amber-100 text-amber-800",
-  replied: "bg-violet-100 text-violet-800",
-  qualified: "bg-green-100 text-green-800",
-  dead: "bg-neutral-200 text-neutral-500",
-  opted_out: "bg-red-100 text-red-800",
-  ignored: "bg-neutral-200 text-neutral-500 line-through",
+  new: "bg-brand-near-black/5 text-brand-near-black/70",
+  surfaced: "bg-blue-100 text-blue-900",
+  sent: "bg-amber-100 text-amber-900",
+  replied: "bg-violet-100 text-violet-900",
+  qualified: "bg-emerald-100 text-emerald-900",
+  dead: "bg-brand-near-black/10 text-brand-near-black/50",
+  opted_out: "bg-red-100 text-red-900",
+  ignored: "bg-brand-near-black/10 text-brand-near-black/40 line-through",
 };
 
 export function StatusPill({ status }: { status: ProspectStatus }) {
@@ -34,7 +36,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700",
+        "inline-flex items-center rounded-full bg-brand-near-black/5 px-2 py-0.5 text-xs font-medium text-brand-near-black/70",
         className,
       )}
       {...props}
