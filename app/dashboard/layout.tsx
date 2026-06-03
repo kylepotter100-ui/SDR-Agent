@@ -2,16 +2,9 @@ import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
+import { Wordmark } from "@/components/brand/wordmark";
+import { Nav } from "@/components/dashboard/nav";
 import { signOut } from "./actions";
-
-const NAV = [
-  { href: "/dashboard", label: "Home" },
-  { href: "/dashboard/prospects", label: "Prospects" },
-  { href: "/dashboard/digests", label: "Digests" },
-  { href: "/dashboard/suppression", label: "Suppression" },
-  { href: "/dashboard/pipeline-health", label: "Pipeline" },
-  { href: "/dashboard/settings", label: "Settings" },
-];
 
 export default async function DashboardLayout({
   children,
@@ -24,15 +17,21 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser();
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto max-w-5xl px-4">
-          <div className="flex h-14 items-center justify-between">
-            <span className="text-sm font-semibold text-neutral-900">
-              KP SDR
-            </span>
+    <div className="min-h-screen bg-brand-cream">
+      <header className="border-b border-brand-near-black/10 bg-brand-cream">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="flex h-14 items-center justify-between gap-3">
+            <Link
+              href="/dashboard"
+              className="flex items-baseline gap-2 transition-opacity hover:opacity-80"
+            >
+              <Wordmark size="sm" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-brand-near-black/50">
+                SDR
+              </span>
+            </Link>
             <div className="flex items-center gap-3">
-              <span className="hidden text-xs text-neutral-500 sm:inline">
+              <span className="hidden font-mono text-xs text-brand-near-black/60 sm:inline">
                 {user?.email}
               </span>
               <form action={signOut}>
@@ -42,20 +41,10 @@ export default async function DashboardLayout({
               </form>
             </div>
           </div>
-          <nav className="-mb-px flex gap-1 overflow-x-auto">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="whitespace-nowrap px-3 py-2 text-sm text-neutral-600 hover:text-neutral-900"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <Nav />
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
     </div>
   );
 }
