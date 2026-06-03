@@ -25,8 +25,8 @@ function Chip({
       className={cn(
         "rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors",
         active
-          ? "border-neutral-900 bg-neutral-900 text-white"
-          : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100",
+          ? "border-brand-accent bg-brand-accent text-brand-cream"
+          : "border-brand-near-black/15 bg-white text-brand-near-black/70 hover:bg-brand-near-black/5",
       )}
     >
       {label}
@@ -43,7 +43,7 @@ function Group({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+      <span className="font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
         {label}
       </span>
       <div className="flex flex-wrap gap-1.5">{children}</div>
@@ -116,7 +116,7 @@ export function FilterBar({ resultCount }: { resultCount: number }) {
   );
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-brand-near-black/10 bg-white/60 p-4">
       <Input
         type="search"
         placeholder="Search company or director name…"
@@ -174,17 +174,22 @@ export function FilterBar({ resultCount }: { resultCount: number }) {
         />
       </Group>
 
-      <div className="flex items-center justify-between border-t border-neutral-100 pt-3 text-sm">
-        <span className="text-neutral-500">
+      <div className="flex items-center justify-between border-t border-brand-near-black/10 pt-3 text-sm">
+        <span className="text-brand-near-black/60">
           {active ? (
             <>
-              Filtered — <strong className="text-neutral-900">{resultCount}</strong>{" "}
+              Filtered —{" "}
+              <strong className="font-mono text-brand-near-black">
+                {resultCount}
+              </strong>{" "}
               {resultCount === 1 ? "prospect" : "prospects"}
             </>
           ) : (
             <>
               Showing all —{" "}
-              <strong className="text-neutral-900">{resultCount}</strong>{" "}
+              <strong className="font-mono text-brand-near-black">
+                {resultCount}
+              </strong>{" "}
               {resultCount === 1 ? "prospect" : "prospects"}
             </>
           )}
@@ -196,7 +201,7 @@ export function FilterBar({ resultCount }: { resultCount: number }) {
               setSearch("");
               router.replace(pathname, { scroll: false });
             }}
-            className="text-neutral-500 underline hover:text-neutral-900"
+            className="text-brand-near-black/60 underline hover:text-brand-near-black"
           >
             Clear filters
           </button>
