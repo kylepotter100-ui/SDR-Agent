@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { LoginBanner } from "@/components/brand/login-banner";
 
 const INPUT_CLASS =
-  "h-10 rounded-md border border-neutral-300 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400";
+  "h-10 rounded-md border border-brand-near-black/20 bg-white px-3 text-sm text-brand-near-black placeholder:text-brand-near-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40";
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -67,11 +68,9 @@ function LoginForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <h1 className="text-xl font-semibold text-neutral-900">
-        KP SDR Dashboard
-      </h1>
-      <p className="mt-1 text-sm text-neutral-500">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+      <LoginBanner tagline="SDR Agent" />
+      <p className="text-center text-sm text-brand-near-black/70">
         {step === "email"
           ? "Sign in with a one-time code."
           : `Enter the 6-digit code sent to ${email}.`}
@@ -118,7 +117,7 @@ function LoginForm() {
               setCode("");
               setError("");
             }}
-            className="text-sm text-neutral-500 hover:text-neutral-800"
+            className="text-sm text-brand-near-black/60 hover:text-brand-near-black"
           >
             Use a different email
           </button>

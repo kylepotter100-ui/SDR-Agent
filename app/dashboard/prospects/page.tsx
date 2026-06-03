@@ -75,7 +75,14 @@ export default async function ProspectsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-neutral-900">Prospects</h1>
+      <div className="flex items-baseline justify-between">
+        <h1 className="font-serif text-2xl tracking-tight text-brand-near-black">
+          Prospects
+        </h1>
+        <span className="font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
+          {rows.length} {rows.length === 1 ? "row" : "rows"}
+        </span>
+      </div>
 
       <FilterBar resultCount={rows.length} />
 
@@ -86,52 +93,68 @@ export default async function ProspectsPage({
       )}
 
       {rows.length === 0 ? (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-brand-near-black/50">
           No prospects match these filters.
         </p>
       ) : (
         <>
           {/* Desktop table */}
-          <table className="hidden w-full border-collapse text-sm sm:table">
-            <thead>
-              <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
-                <th className="py-2 pr-3 font-medium">Company</th>
-                <th className="py-2 pr-3 font-medium">Postcode</th>
-                <th className="py-2 pr-3 font-medium">Tier</th>
-                <th className="py-2 pr-3 font-medium">Status</th>
-                <th className="py-2 pr-3 font-medium">Score</th>
-                <th className="py-2 pr-3 font-medium">Last action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-b border-neutral-100 hover:bg-neutral-50"
-                >
-                  <td className="py-2 pr-3">
-                    <Link
-                      href={`/dashboard/prospects/${p.id}`}
-                      className="font-medium text-neutral-900 hover:underline"
-                    >
-                      {p.company_name}
-                    </Link>
-                  </td>
-                  <td className="py-2 pr-3 text-neutral-600">{p.postcode}</td>
-                  <td className="py-2 pr-3 text-neutral-600">{p.sic_tier}</td>
-                  <td className="py-2 pr-3">
-                    <StatusPill status={p.status} />
-                  </td>
-                  <td className="py-2 pr-3 text-neutral-600">
-                    {p.ranking_score ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-neutral-500">
-                    {formatDate(p.last_action_at)}
-                  </td>
+          <div className="hidden overflow-hidden rounded-lg border border-brand-near-black/10 bg-white/60 sm:block">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-brand-near-black/10 text-left font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
+                  <th className="px-3 py-2 font-medium">Company</th>
+                  <th className="px-3 py-2 font-medium">Postcode</th>
+                  <th className="px-3 py-2 font-medium">Tier</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Score</th>
+                  <th className="px-3 py-2 font-medium">Email</th>
+                  <th className="px-3 py-2 font-medium">Last action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="border-b border-brand-near-black/5 transition-colors last:border-0 hover:bg-brand-near-black/[0.03]"
+                  >
+                    <td className="px-3 py-2">
+                      <Link
+                        href={`/dashboard/prospects/${p.id}`}
+                        className="font-medium text-brand-near-black hover:underline"
+                      >
+                        {p.company_name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-brand-near-black/70">
+                      {p.postcode}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-brand-near-black/70">
+                      {p.sic_tier}
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusPill status={p.status} />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-brand-near-black/70">
+                      {p.ranking_score ?? "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {p.director_email ? (
+                        <span className="text-xs text-emerald-700">✓</span>
+                      ) : (
+                        <span className="text-xs text-brand-near-black/30">
+                          —
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-brand-near-black/50">
+                      {formatDate(p.last_action_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {/* Mobile cards */}
           <ul className="flex flex-col gap-2 sm:hidden">
@@ -139,17 +162,18 @@ export default async function ProspectsPage({
               <li key={p.id}>
                 <Link
                   href={`/dashboard/prospects/${p.id}`}
-                  className="block rounded-lg border border-neutral-200 bg-white p-3"
+                  className="block rounded-lg border border-brand-near-black/10 bg-white/60 p-3 transition-colors hover:bg-white"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-neutral-900">
+                    <span className="font-medium text-brand-near-black">
                       {p.company_name}
                     </span>
                     <StatusPill status={p.status} />
                   </div>
-                  <div className="mt-1 text-xs text-neutral-500">
+                  <div className="mt-1 font-mono text-xs text-brand-near-black/55">
                     {p.postcode} · Tier {p.sic_tier} · Score{" "}
                     {p.ranking_score ?? "—"}
+                    {p.director_email ? " · ✓ email" : ""}
                   </div>
                 </Link>
               </li>

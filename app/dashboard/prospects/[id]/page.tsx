@@ -26,7 +26,15 @@ function formatTimestamp(iso: string): string {
   });
 }
 
-const CH_PROFILE = "https://find-and-update.company-information.service.gov.uk/company/";
+const CH_PROFILE =
+  "https://find-and-update.company-information.service.gov.uk/company/";
+
+const CARD =
+  "rounded-lg border border-brand-near-black/10 bg-white/60 p-4";
+const LABEL =
+  "font-mono text-xs uppercase tracking-wide text-brand-near-black/50";
+const LINK =
+  "text-brand-accent underline-offset-2 hover:underline";
 
 function Field({
   label,
@@ -37,10 +45,8 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-        {label}
-      </span>
-      <span className="text-sm text-neutral-800">{children}</span>
+      <span className={LABEL}>{label}</span>
+      <span className="text-sm text-brand-near-black">{children}</span>
     </div>
   );
 }
@@ -87,14 +93,15 @@ export default async function ProspectDetailPage({
       getSuppressedEmails(),
     ]);
 
-  const hasDraft = Boolean(p.personalised_email_subject && p.personalised_email_body);
+  const hasDraft = Boolean(
+    p.personalised_email_subject && p.personalised_email_body,
+  );
 
   // Send guard. STATUS_EXCLUDED already groups opted_out/ignored/dead;
   // suppression entries are lowercased on insert so the membership
   // check needs the same normalisation. `sent` is not in STATUS_EXCLUDED
   // — re-compose stays allowed; the visible status carries the warning.
-  const directorEmailLower =
-    p.director_email?.trim().toLowerCase() ?? null;
+  const directorEmailLower = p.director_email?.trim().toLowerCase() ?? null;
   const blockReason: string | null = !p.director_email
     ? "Awaiting Apollo enrichment"
     : (STATUS_EXCLUDED as string[]).includes(p.status)
@@ -108,36 +115,42 @@ export default async function ProspectDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Header — breadcrumb, title, status. */}
       <div>
         <Link
           href="/dashboard/prospects"
-          className="text-sm text-neutral-500 hover:text-neutral-900"
+          className="text-sm text-brand-near-black/60 hover:text-brand-near-black"
         >
           ← All prospects
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold text-neutral-900">
+          <h1 className="font-serif text-2xl tracking-tight text-brand-near-black">
             {p.company_name}
           </h1>
           <StatusPill status={p.status} />
-          {p.starred && <span className="text-amber-500">★</span>}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <StatusSelect id={p.id} status={p.status} />
-          <ProspectActions id={p.id} starred={p.starred} status={p.status} />
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <MarkSentDialog id={p.id} />
-          <LogReplyDialog id={p.id} />
-          {p.director_email && (
-            <SuppressButton id={p.id} email={p.director_email} />
+          {p.starred && (
+            <span aria-label="Starred" className="text-brand-accent">
+              ★
+            </span>
           )}
         </div>
       </div>
 
+      {/* Sticky action row — always reachable during the review loop. */}
+      <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-2 border-y border-brand-near-black/10 bg-brand-cream/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-brand-cream/70">
+        <StatusSelect id={p.id} status={p.status} />
+        <ProspectActions id={p.id} starred={p.starred} status={p.status} />
+        <span className="mx-1 h-5 w-px bg-brand-near-black/15" />
+        <MarkSentDialog id={p.id} />
+        <LogReplyDialog id={p.id} />
+        {p.director_email && (
+          <SuppressButton id={p.id} email={p.director_email} />
+        )}
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Facts */}
-        <div className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className={`flex flex-col gap-4 ${CARD}`}>
           <Field label="Location">
             {p.postcode}
             {p.registered_address ? ` · ${p.registered_address}` : ""}
@@ -149,9 +162,9 @@ export default async function ProspectDetailPage({
           </Field>
           <Field label="Signal">{p.observable_signal ?? "—"}</Field>
           <Field label="Ranking">
-            {p.ranking_score ?? "—"}
+            <span className="font-mono">{p.ranking_score ?? "—"}</span>
             {p.ranking_reasoning ? (
-              <span className="mt-1 block text-neutral-500">
+              <span className="mt-1 block text-brand-near-black/60">
                 {p.ranking_reasoning}
               </span>
             ) : null}
@@ -159,10 +172,7 @@ export default async function ProspectDetailPage({
           <Field label="Director">
             {p.director_name ?? "not known"}
             {p.director_email ? (
-              <a
-                href={`mailto:${p.director_email}`}
-                className="ml-2 text-blue-700 hover:underline"
-              >
+              <a href={`mailto:${p.director_email}`} className={`ml-2 ${LINK}`}>
                 {p.director_email}
               </a>
             ) : (
@@ -178,7 +188,7 @@ export default async function ProspectDetailPage({
                 href={`${CH_PROFILE}${encodeURIComponent(p.company_number)}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-blue-700 hover:underline"
+                className={LINK}
               >
                 Companies House
               </a>
@@ -187,7 +197,7 @@ export default async function ProspectDetailPage({
                   href={p.website_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-blue-700 hover:underline"
+                  className={LINK}
                 >
                   Website
                 </a>
@@ -197,7 +207,7 @@ export default async function ProspectDetailPage({
                   href={p.facebook_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-blue-700 hover:underline"
+                  className={LINK}
                 >
                   Facebook
                 </a>
@@ -207,7 +217,7 @@ export default async function ProspectDetailPage({
                   href={`https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(p.maps_place_id)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-blue-700 hover:underline"
+                  className={LINK}
                 >
                   Google Maps
                 </a>
@@ -217,7 +227,7 @@ export default async function ProspectDetailPage({
         </div>
 
         {/* Email draft */}
-        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className={`flex flex-col gap-3 ${CARD}`}>
           {hasDraft ? (
             <DraftEditor
               id={p.id}
@@ -229,10 +239,8 @@ export default async function ProspectDetailPage({
             />
           ) : (
             <>
-              <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-                Personalised draft
-              </span>
-              <p className="rounded-md bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
+              <span className={LABEL}>Personalised draft</span>
+              <p className="rounded-md bg-brand-near-black/5 px-3 py-6 text-center text-sm text-brand-near-black/55">
                 Personalisation pending — the agent hasn&rsquo;t written a draft
                 for this prospect yet.
               </p>
@@ -242,45 +250,47 @@ export default async function ProspectDetailPage({
       </div>
 
       {/* Notes */}
-      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+      <div className={`flex flex-col gap-3 ${CARD}`}>
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-            Notes
-          </span>
+          <span className={LABEL}>Notes</span>
           <AddNoteDialog id={p.id} />
         </div>
         {notes && notes.length > 0 ? (
           <ul className="flex flex-col gap-3">
             {notes.map((n) => (
-              <li key={n.id} className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0">
-                <p className="whitespace-pre-wrap text-sm text-neutral-800">
+              <li
+                key={n.id}
+                className="border-b border-brand-near-black/5 pb-3 last:border-0 last:pb-0"
+              >
+                <p className="whitespace-pre-wrap text-sm text-brand-near-black">
                   {n.body}
                 </p>
-                <p className="mt-1 text-xs text-neutral-400">
+                <p className="mt-1 font-mono text-xs text-brand-near-black/45">
                   {formatTimestamp(n.created_at)}
                 </p>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-neutral-500">No notes yet.</p>
+          <p className="text-sm text-brand-near-black/55">No notes yet.</p>
         )}
       </div>
 
       {/* Sends + replies */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-            Sends
-          </span>
+        <div className={`flex flex-col gap-3 ${CARD}`}>
+          <span className={LABEL}>Sends</span>
           {sends && sends.length > 0 ? (
             <ul className="flex flex-col gap-2">
               {sends.map((s) => (
-                <li key={s.id} className="text-sm text-neutral-800">
-                  {formatTimestamp(s.sent_at)}
-                  <span className="text-neutral-400"> · {s.channel}</span>
+                <li key={s.id} className="text-sm text-brand-near-black">
+                  <span className="font-mono">{formatTimestamp(s.sent_at)}</span>
+                  <span className="text-brand-near-black/40">
+                    {" "}
+                    · {s.channel}
+                  </span>
                   {s.notes ? (
-                    <span className="block text-xs text-neutral-500">
+                    <span className="block text-xs text-brand-near-black/55">
                       {s.notes}
                     </span>
                   ) : null}
@@ -288,27 +298,25 @@ export default async function ProspectDetailPage({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-neutral-500">Not sent yet.</p>
+            <p className="text-sm text-brand-near-black/55">Not sent yet.</p>
           )}
         </div>
 
-        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-            Replies
-          </span>
+        <div className={`flex flex-col gap-3 ${CARD}`}>
+          <span className={LABEL}>Replies</span>
           {replies && replies.length > 0 ? (
             <ul className="flex flex-col gap-3">
               {replies.map((r) => (
                 <li
                   key={r.id}
-                  className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0"
+                  className="border-b border-brand-near-black/5 pb-3 last:border-0 last:pb-0"
                 >
-                  <p className="text-xs text-neutral-400">
+                  <p className="font-mono text-xs text-brand-near-black/45">
                     {formatTimestamp(r.received_at)}
                     {r.sentiment ? ` · ${r.sentiment}` : ""}
                   </p>
                   {r.body ? (
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-brand-near-black">
                       {r.body}
                     </p>
                   ) : null}
@@ -316,7 +324,9 @@ export default async function ProspectDetailPage({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-neutral-500">No replies logged.</p>
+            <p className="text-sm text-brand-near-black/55">
+              No replies logged.
+            </p>
           )}
         </div>
       </div>

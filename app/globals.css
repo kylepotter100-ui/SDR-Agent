@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+@theme {
+  --color-brand-near-black: #1A1714;
+  --color-brand-cream: #F2EBDD;
+  --color-brand-accent: #A8321E;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-instrument-serif);
+}

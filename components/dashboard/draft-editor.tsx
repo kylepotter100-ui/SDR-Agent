@@ -26,8 +26,10 @@ export function DraftEditor(props: DraftEditorProps) {
   // recomputes to false. A stored flag would stay stuck disabled.
   const dirty = subject !== props.subject || body !== props.body;
 
-  // mailto is built from the PERSISTED props, not live edit state, so
-  // the composed message always matches what mark-sent will log.
+  // The compose URL is built from the PERSISTED props, not live edit
+  // state, so the composed message always matches what mark-sent will
+  // log. Outlook web compose deeplink format — the signed-in account
+  // determines the From address (no URL parameter can force it).
   const composeReason = !props.canCompose
     ? props.blockReason
     : dirty
@@ -35,48 +37,48 @@ export function DraftEditor(props: DraftEditorProps) {
       : null;
   const canActuallyCompose = composeReason === null;
 
-  const mailtoHref = canActuallyCompose && props.directorEmail
-    ? `mailto:${encodeURIComponent(props.directorEmail)}` +
-      `?subject=${encodeURIComponent(props.subject)}` +
-      `&body=${encodeURIComponent(props.body)}`
-    : null;
+  const composeHref =
+    canActuallyCompose && props.directorEmail
+      ? `https://outlook.office.com/mail/deeplink/compose` +
+        `?to=${encodeURIComponent(props.directorEmail)}` +
+        `&subject=${encodeURIComponent(props.subject)}` +
+        `&body=${encodeURIComponent(props.body)}`
+      : null;
 
   const draftPlain = `Subject: ${props.subject}\n\n${props.body}`;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+        <span className="font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
           Personalised draft
         </span>
         <CopyButton text={draftPlain} label="Copy draft" />
       </div>
 
-      <label className="flex flex-col gap-1 text-xs text-neutral-500">
+      <label className="flex flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
         Subject
         <input
           type="text"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
-          className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+          className="w-full rounded-md border border-brand-near-black/20 bg-white px-3 py-2 text-sm font-semibold text-brand-near-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40"
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-neutral-500">
+      <label className="flex flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
         Body
         <textarea
           rows={14}
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          className="w-full resize-y rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-[13px] leading-relaxed text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+          className="w-full resize-y rounded-md border border-brand-near-black/20 bg-white px-3 py-2 font-mono text-[13px] leading-relaxed text-brand-near-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40"
         />
       </label>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {composeReason && (
-          <span className="mr-auto text-xs text-amber-700">
-            {composeReason}
-          </span>
+          <span className="mr-auto text-xs text-amber-700">{composeReason}</span>
         )}
         <Button
           variant="secondary"
@@ -90,10 +92,12 @@ export function DraftEditor(props: DraftEditorProps) {
         >
           {pending ? "Saving…" : "Save draft"}
         </Button>
-        {mailtoHref ? (
+        {composeHref ? (
           <a
-            href={mailtoHref}
-            className="inline-flex h-8 items-center justify-center rounded-md bg-neutral-900 px-3 text-sm font-medium text-white transition-colors hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+            href={composeHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-brand-accent px-3 text-sm font-medium text-brand-cream transition-colors hover:bg-brand-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40"
           >
             Compose in Outlook
           </a>

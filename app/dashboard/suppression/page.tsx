@@ -14,10 +14,10 @@ export default async function SuppressionPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold text-neutral-900">
+        <h1 className="font-serif text-2xl tracking-tight text-brand-near-black">
           Suppression list
         </h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="mt-1 text-sm text-brand-near-black/60">
           The agent skips these addresses when personalising and building the
           digest.
         </p>
