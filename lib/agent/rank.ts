@@ -38,6 +38,9 @@ import {
 } from "@/lib/config";
 
 const MAX_OUTPUT_TOKENS = 16000;
+// Preview-only: size of the `top15` review sample on RankSummary. NOT
+// the surfacing cap — digest selection uses MAX_SURFACED_PER_WEEK
+// (lib/config.ts) and applies MIN_SURFACING_SCORE as a floor.
 const TOP_N = 15;
 
 // Step 0 empirical: 56-chunk @ effort medium ≈ 107s end-to-end. Three

@@ -24,8 +24,11 @@ import {
   isSuppressed,
   STATUS_EXCLUDED_FILTER,
 } from "@/lib/agent/suppression";
+import {
+  MAX_SURFACED_PER_WEEK,
+  MIN_SURFACING_SCORE,
+} from "@/lib/config";
 
-const TOP_N = 15;
 const COMPANIES_HOUSE_PROFILE_URL =
   "https://find-and-update.company-information.service.gov.uk/company/";
 
@@ -265,6 +268,7 @@ async function selectEligible(): Promise<{
     )
     .is("surfaced_in_digest_at", null)
     .not("ranking_score", "is", null)
+    .gte("ranking_score", MIN_SURFACING_SCORE)
     .not("personalised_email_subject", "is", null)
     .not("personalised_email_body", "is", null)
     .not("status", "in", STATUS_EXCLUDED_FILTER)
@@ -282,7 +286,10 @@ async function selectEligible(): Promise<{
   const eligible = ((result.data ?? []) as unknown as ProspectForDigest[]).filter(
     (p) => !isSuppressed(p.director_email, suppressed),
   );
-  return { considered: eligible.length, top: eligible.slice(0, TOP_N) };
+  return {
+    considered: eligible.length,
+    top: eligible.slice(0, MAX_SURFACED_PER_WEEK),
+  };
 }
 
 /**
