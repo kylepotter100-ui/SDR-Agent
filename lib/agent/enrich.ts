@@ -13,6 +13,7 @@
 
 import { db } from "@/lib/db";
 import {
+  ENABLED_SIC_TIERS,
   POSTCODE_PREFIXES,
   SIC_CODES,
   type PostcodePrefix,
@@ -312,6 +313,13 @@ export async function enrich(): Promise<EnrichSummary> {
     if (!sic) {
       console.warn(
         `[enrich] skip ${company_number}: no qualifying SIC code on raw item`,
+      );
+      skippedNoSicMatch++;
+      continue;
+    }
+    if (!ENABLED_SIC_TIERS.has(sic.tier)) {
+      console.warn(
+        `[enrich] skip ${company_number}: SIC ${sic.code} is in disabled tier ${sic.tier}`,
       );
       skippedNoSicMatch++;
       continue;

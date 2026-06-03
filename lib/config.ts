@@ -114,8 +114,6 @@ export const SIC_CODES: readonly SicCode[] = [
   { code: "56210", description: "Event catering", examples: "small private operators with bookable events", tier: 6 },
 ];
 
-export const SIC_CODE_LIST: readonly string[] = SIC_CODES.map((c) => c.code);
-
 export function tierMeta(tier: SicTier): SicTierMeta {
   const meta = SIC_TIERS.find((t) => t.tier === tier);
   if (!meta) throw new Error(`Unknown SIC tier: ${tier}`);
@@ -126,3 +124,30 @@ export function fitWeightForCode(code: string): number | null {
   const sic = SIC_CODES.find((c) => c.code === code);
   return sic ? tierMeta(sic.tier).fitWeight : null;
 }
+
+/**
+ * Surfacing controls. The digest is a limited weekly inbox — these
+ * keep weak candidates out and bound the slot count.
+ *
+ * Floor of 80 set from the current distribution: 46 prospects sit at
+ * >=80 today, so 12 slots/week is comfortably fed. 75 is the fallback
+ * if volume thins — do not start there.
+ */
+export const MIN_SURFACING_SCORE = 80;
+export const MAX_SURFACED_PER_WEEK = 12;
+
+/**
+ * Which SIC tiers are eligible for discovery + enrichment. Excluding a
+ * tier here removes it from both the discovery search (no CH advanced-
+ * search call against its codes) and any in-flight raw rows from being
+ * enriched. Existing prospects in excluded tiers stay in the DB — they
+ * just stop being topped up.
+ *
+ * Default: drop Tier 4 (trade & service, fit 0.6). The actual
+ * distribution says Tier 4 is the noise: 89 prospects, zero above the
+ * 80 floor (top score 78), the biggest tier in the pool and not
+ * producing surfacable candidates. Tier 6 stays in (9 prospects, 3
+ * above 80, avg 75) — small but proven. The fit-weight prior would
+ * have flipped these; the data wins.
+ */
+export const ENABLED_SIC_TIERS: ReadonlySet<SicTier> = new Set([1, 2, 3, 5, 6]);

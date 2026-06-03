@@ -16,12 +16,16 @@ import { db } from "@/lib/db";
 import type { Json } from "@/lib/db.types";
 import { chFetch } from "@/lib/companies-house";
 import {
+  ENABLED_SIC_TIERS,
   POSTCODE_PREFIXES,
   SIC_CODES,
-  SIC_CODE_LIST,
   SIC_TIERS,
   type PostcodePrefix,
 } from "@/lib/config";
+
+const SIC_CODES_FOR_DISCOVERY: readonly string[] = SIC_CODES
+  .filter((c) => ENABLED_SIC_TIERS.has(c.tier))
+  .map((c) => c.code);
 
 const PAGE_SIZE = 100;
 const LOOKBACK_DAYS = 7;
@@ -116,7 +120,7 @@ async function fetchAllPages(
     const params = new URLSearchParams({
       incorporated_from: from,
       incorporated_to: to,
-      sic_codes: SIC_CODE_LIST.join(","),
+      sic_codes: SIC_CODES_FOR_DISCOVERY.join(","),
       size: String(PAGE_SIZE),
       start_index: String(page * PAGE_SIZE),
     });
