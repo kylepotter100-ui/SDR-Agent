@@ -30,7 +30,7 @@ export function SuppressionManager({
   return (
     <div className="flex flex-col gap-4">
       <form
-        className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end"
+        className="flex flex-col gap-2 rounded-lg border border-brand-near-black/10 bg-white/60 p-4 sm:flex-row sm:items-end"
         onSubmit={(e) => {
           e.preventDefault();
           setError("");
@@ -45,7 +45,7 @@ export function SuppressionManager({
           });
         }}
       >
-        <label className="flex flex-1 flex-col gap-1 text-xs text-neutral-500">
+        <label className="flex flex-1 flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
           Email
           <Input
             type="email"
@@ -55,19 +55,19 @@ export function SuppressionManager({
             placeholder="someone@example.com"
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-neutral-500">
+        <label className="flex flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
           Reason
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+            className="h-9 rounded-md border border-brand-near-black/20 bg-white px-2 text-sm text-brand-near-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40"
           >
             <option value="manual_block">manual_block</option>
             <option value="unsubscribe">unsubscribe</option>
             <option value="bounce">bounce</option>
           </select>
         </label>
-        <label className="flex flex-1 flex-col gap-1 text-xs text-neutral-500">
+        <label className="flex flex-1 flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
           Notes
           <Input
             type="text"
@@ -82,21 +82,21 @@ export function SuppressionManager({
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {entries.length === 0 ? (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-brand-near-black/55">
           Nothing suppressed. Addresses added here are skipped by the agent.
         </p>
       ) : (
-        <ul className="flex flex-col divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white">
+        <ul className="flex flex-col divide-y divide-brand-near-black/5 rounded-lg border border-brand-near-black/10 bg-white/60">
           {entries.map((entry) => (
             <li
               key={entry.email}
               className="flex items-center justify-between gap-3 px-4 py-3"
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-neutral-900">
+                <div className="truncate text-sm font-medium text-brand-near-black">
                   {entry.email}
                 </div>
-                <div className="text-xs text-neutral-500">
+                <div className="font-mono text-xs text-brand-near-black/55">
                   {entry.reason}
                   {entry.notes ? ` · ${entry.notes}` : ""}
                 </div>

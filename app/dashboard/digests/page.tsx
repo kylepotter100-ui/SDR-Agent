@@ -43,30 +43,32 @@ export default async function DigestsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-neutral-900">Digest history</h1>
+      <h1 className="font-serif text-2xl tracking-tight text-brand-near-black">
+        Digest history
+      </h1>
 
       {digests.length === 0 ? (
-        <p className="text-sm text-neutral-500">No digests sent yet.</p>
+        <p className="text-sm text-brand-near-black/55">No digests sent yet.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {digests.map((d) => (
             <li
               key={d.id}
-              className="rounded-lg border border-neutral-200 bg-white"
+              className="rounded-lg border border-brand-near-black/10 bg-white/60"
             >
               <details>
                 <summary className="cursor-pointer list-none px-4 py-3">
                   <span className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-neutral-900">
+                    <span className="font-mono text-sm text-brand-near-black">
                       {formatDate(d.sent_at)}
                     </span>
-                    <span className="text-xs text-neutral-500">
+                    <span className="font-mono text-xs text-brand-near-black/55">
                       {d.prospect_ids.length} sent · {d.candidate_count}{" "}
                       considered · {d.delivered_to}
                     </span>
                   </span>
                 </summary>
-                <ul className="flex flex-col divide-y divide-neutral-100 border-t border-neutral-100">
+                <ul className="flex flex-col divide-y divide-brand-near-black/5 border-t border-brand-near-black/10">
                   {d.prospect_ids.map((pid: string) => {
                     const p = prospectMap.get(pid);
                     return (
@@ -77,12 +79,12 @@ export default async function DigestsPage() {
                         {p ? (
                           <Link
                             href={`/dashboard/prospects/${pid}`}
-                            className="truncate text-sm text-neutral-800 hover:underline"
+                            className="truncate text-sm text-brand-near-black hover:underline"
                           >
                             {p.company_name}
                           </Link>
                         ) : (
-                          <span className="truncate text-sm text-neutral-400">
+                          <span className="truncate text-sm text-brand-near-black/40">
                             (prospect removed)
                           </span>
                         )}

@@ -28,7 +28,7 @@ export function LogReplyDialog({ id }: { id: string }) {
       </Button>
       <dialog
         ref={dialogRef}
-        className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-neutral-200 p-0 backdrop:bg-black/40"
+        className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-brand-near-black/10 bg-brand-cream p-0 backdrop:bg-brand-near-black/40"
       >
         <form
           className="flex flex-col gap-3 p-4"
@@ -42,8 +42,10 @@ export function LogReplyDialog({ id }: { id: string }) {
             });
           }}
         >
-          <h2 className="text-sm font-semibold text-neutral-900">Log reply</h2>
-          <label className="flex flex-col gap-1 text-xs text-neutral-500">
+          <h2 className="font-mono text-xs uppercase tracking-wide text-brand-near-black/60">
+            Log reply
+          </h2>
+          <label className="flex flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
             Received on
             <Input
               type="date"
@@ -52,7 +54,7 @@ export function LogReplyDialog({ id }: { id: string }) {
               onChange={(e) => setDate(e.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-500">
+          <label className="flex flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
             Reply
             <textarea
               autoFocus
@@ -61,10 +63,10 @@ export function LogReplyDialog({ id }: { id: string }) {
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Paste the reply…"
-              className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+              className="w-full rounded-md border border-brand-near-black/20 bg-white px-3 py-2 text-sm text-brand-near-black placeholder:text-brand-near-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40"
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-500">
+          <label className="flex flex-col gap-1 font-mono text-xs uppercase tracking-wide text-brand-near-black/50">
             Sentiment (optional — your words)
             <Input
               type="text"

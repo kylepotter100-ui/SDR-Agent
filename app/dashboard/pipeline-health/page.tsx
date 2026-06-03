@@ -37,15 +37,15 @@ function parseCost(summary: unknown): number | null {
 }
 
 const RUN_STATUS_STYLE: Record<string, string> = {
-  ok: "bg-green-100 text-green-800",
-  partial: "bg-amber-100 text-amber-800",
-  failed: "bg-red-100 text-red-800",
+  ok: "bg-emerald-100 text-emerald-900",
+  partial: "bg-amber-100 text-amber-900",
+  failed: "bg-red-100 text-red-900",
 };
 
 const STAGE_STATUS_STYLE: Record<string, string> = {
-  ok: "text-green-700",
+  ok: "text-emerald-700",
   failed: "text-red-700",
-  skipped: "text-neutral-400",
+  skipped: "text-brand-near-black/40",
 };
 
 export default async function PipelineHealthPage() {
@@ -67,10 +67,14 @@ export default async function PipelineHealthPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-neutral-900">Pipeline health</h1>
+      <h1 className="font-serif text-2xl tracking-tight text-brand-near-black">
+        Pipeline health
+      </h1>
 
       {runs.length === 0 ? (
-        <p className="text-sm text-neutral-500">No cron runs recorded yet.</p>
+        <p className="text-sm text-brand-near-black/55">
+          No cron runs recorded yet.
+        </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {runs.map((run) => {
@@ -79,24 +83,24 @@ export default async function PipelineHealthPage() {
             return (
               <li
                 key={run.id}
-                className="rounded-lg border border-neutral-200 bg-white p-4"
+                className="rounded-lg border border-brand-near-black/10 bg-white/60 p-4"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
-                    <span className="text-sm font-medium capitalize text-neutral-900">
+                    <span className="text-sm font-medium capitalize text-brand-near-black">
                       {run.kind}
                     </span>
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-xs font-medium",
                         RUN_STATUS_STYLE[run.status] ??
-                          "bg-neutral-100 text-neutral-600",
+                          "bg-brand-near-black/5 text-brand-near-black/60",
                       )}
                     >
                       {run.status}
                     </span>
                   </span>
-                  <span className="text-xs text-neutral-500">
+                  <span className="font-mono text-xs text-brand-near-black/55">
                     {formatTimestamp(run.started_at)}
                     {run.duration_ms != null
                       ? ` · ${Math.round(run.duration_ms / 1000)}s`
@@ -105,12 +109,13 @@ export default async function PipelineHealthPage() {
                   </span>
                 </div>
                 {stages.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
                     {stages.map((s) => (
                       <span
                         key={s.name}
                         className={cn(
-                          STAGE_STATUS_STYLE[s.status] ?? "text-neutral-500",
+                          STAGE_STATUS_STYLE[s.status] ??
+                            "text-brand-near-black/55",
                         )}
                       >
                         {s.name} {s.status} ({Math.round(s.durationMs / 1000)}s)

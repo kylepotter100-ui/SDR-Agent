@@ -28,7 +28,7 @@ export function StatusSelect({
         });
       }}
       className={cn(
-        "h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400",
+        "h-9 rounded-md border border-brand-near-black/20 bg-white px-2 text-sm capitalize text-brand-near-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40",
         pending && "opacity-50",
       )}
     >
