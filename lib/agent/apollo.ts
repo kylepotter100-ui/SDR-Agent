@@ -20,7 +20,11 @@
  */
 
 import { db } from "@/lib/db";
-import { fetchOfficers, CompaniesHouseError } from "@/lib/companies-house";
+import {
+  fetchOfficersWithLinks,
+  CompaniesHouseError,
+  type OfficerWithLinks,
+} from "@/lib/companies-house";
 import { POSTCODE_PREFIXES, type PostcodePrefix } from "@/lib/config";
 
 const APOLLO_URL = "https://api.apollo.io/api/v1/people/match";
@@ -111,9 +115,9 @@ function flipName(chName: string): string {
   return `${rest} ${surname}`;
 }
 
-function pickDirector(
-  officers: Awaited<ReturnType<typeof fetchOfficers>>,
-): { raw: string; flipped: string } | null {
+export function pickDirector(
+  officers: OfficerWithLinks[],
+): { raw: string; flipped: string; officer_id: string | null } | null {
   const candidates = officers
     .filter((o) => o.officer_role === "director" && !o.resigned_on && o.name)
     .sort((a, b) => {
@@ -123,7 +127,11 @@ function pickDirector(
     });
   const first = candidates[0];
   if (!first) return null;
-  return { raw: first.name, flipped: flipName(first.name) };
+  return {
+    raw: first.name,
+    flipped: flipName(first.name),
+    officer_id: first.officer_id,
+  };
 }
 
 async function apolloMatch(
@@ -202,7 +210,7 @@ export async function enrichWithApollo(): Promise<ApolloSummary> {
     // Stage A — populate director_name if missing.
     if (!directorName) {
       try {
-        const officers = await fetchOfficers(prospect.company_number);
+        const officers = await fetchOfficersWithLinks(prospect.company_number);
         const picked = pickDirector(officers);
         if (!picked) {
           directorMissing++;
@@ -228,7 +236,10 @@ export async function enrichWithApollo(): Promise<ApolloSummary> {
         );
         const upd = await db()
           .from("prospects")
-          .update({ director_name: directorName })
+          .update({
+            director_name: directorName,
+            director_officer_id: picked.officer_id,
+          })
           .eq("id", prospect.id);
         if (upd.error) {
           recordError({

@@ -187,6 +187,7 @@ function pipelineSummaryBlock(context: PipelineContext | undefined): string {
   const enrichCount = readNumber(context.prepare?.enrich, "enriched");
   const apolloProcessed = readNumber(context.prepare?.apollo, "processed");
   const apolloConsidered = readNumber(context.prepare?.apollo, "considered");
+  const signalsCount = readNumber(context.prepare?.signals, "processed");
   const personaliseCount = readNumber(
     context.prepare?.personalise,
     "processed",
@@ -209,6 +210,9 @@ function pipelineSummaryBlock(context: PipelineContext | undefined): string {
   } else {
     parts.push("apollo —");
   }
+  parts.push(
+    signalsCount !== null ? `${signalsCount} signals enriched` : "signals —",
+  );
   parts.push(
     personaliseCount !== null
       ? `${personaliseCount} personalised`
@@ -304,6 +308,7 @@ export interface PipelineContext {
     discover?: unknown;
     enrich?: unknown;
     apollo?: unknown;
+    signals?: unknown;
     personalise?: unknown;
   };
   rank?: unknown;
