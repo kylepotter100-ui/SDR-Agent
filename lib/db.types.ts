@@ -32,6 +32,15 @@ export type ProspectStatus =
 
 export type ActionActor = "system" | "kyle";
 
+export type GreenfieldFlag =
+  | "sole_independent"
+  | "standard"
+  | "serial_operator"
+  | "group_subsidiary"
+  | "unknown";
+
+export type PscStatus = "present" | "none_filed" | "unknown";
+
 export interface Database {
   public: {
     Tables: {
@@ -82,6 +91,15 @@ export interface Database {
           status: ProspectStatus;
           surfaced_in_digest_at: string | null;
           apollo_attempted_at: string | null;
+          director_officer_id: string | null;
+          psc_corporate_count: number | null;
+          psc_individual_count: number | null;
+          psc_total_count: number | null;
+          psc_status: PscStatus | null;
+          director_active_appointments: number | null;
+          within_pool_director_count: number | null;
+          signals_attempted_at: string | null;
+          greenfield_flag: GreenfieldFlag | null;
           starred: boolean;
           last_action_at: string | null;
           last_action_by: ActionActor | null;
@@ -113,6 +131,15 @@ export interface Database {
           status?: ProspectStatus;
           surfaced_in_digest_at?: string | null;
           apollo_attempted_at?: string | null;
+          director_officer_id?: string | null;
+          psc_corporate_count?: number | null;
+          psc_individual_count?: number | null;
+          psc_total_count?: number | null;
+          psc_status?: PscStatus | null;
+          director_active_appointments?: number | null;
+          within_pool_director_count?: number | null;
+          signals_attempted_at?: string | null;
+          greenfield_flag?: GreenfieldFlag | null;
           starred?: boolean;
           last_action_at?: string | null;
           last_action_by?: ActionActor | null;
@@ -144,6 +171,15 @@ export interface Database {
           status?: ProspectStatus;
           surfaced_in_digest_at?: string | null;
           apollo_attempted_at?: string | null;
+          director_officer_id?: string | null;
+          psc_corporate_count?: number | null;
+          psc_individual_count?: number | null;
+          psc_total_count?: number | null;
+          psc_status?: PscStatus | null;
+          director_active_appointments?: number | null;
+          within_pool_director_count?: number | null;
+          signals_attempted_at?: string | null;
+          greenfield_flag?: GreenfieldFlag | null;
           starred?: boolean;
           last_action_at?: string | null;
           last_action_by?: ActionActor | null;

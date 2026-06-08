@@ -151,3 +151,21 @@ export const MAX_SURFACED_PER_WEEK = 12;
  * have flipped these; the data wins.
  */
 export const ENABLED_SIC_TIERS: ReadonlySet<SicTier> = new Set([1, 2, 3, 5, 6]);
+
+/**
+ * Signal-stage thresholds.
+ *
+ * SERIAL_OPERATOR_APPOINTMENT_THRESHOLD: a director with this many or
+ * more active appointments across other companies flips the
+ * greenfield_flag to "serial_operator" (deterministic in
+ * lib/agent/signals.ts, surfaced to the ranking prompt as a -15
+ * down-rank). 1-2 active appointments is the "holding co + trading co"
+ * pattern (fine). 3-4 is borderline — the prompt sees the count and
+ * weighs it. 5+ is unambiguous.
+ *
+ * MAX_SIGNALS_PER_RUN: safety ceiling on per-run prospect count for
+ * the signals stage. CH is free so this is a runtime-bound, not a
+ * cost cap. Mirrors MAX_ENRICH_PER_RUN's role.
+ */
+export const SERIAL_OPERATOR_APPOINTMENT_THRESHOLD = 5;
+export const MAX_SIGNALS_PER_RUN = 100;

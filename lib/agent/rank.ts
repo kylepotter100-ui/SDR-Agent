@@ -249,7 +249,7 @@ export async function rank(
   const candidatesResult = await db()
     .from("prospects")
     .select(
-      "id, company_number, company_name, postcode, sic_code, sic_description, sic_tier, observable_signal, has_website, website_url, facebook_url, director_name, incorporated_on",
+      "id, company_number, company_name, postcode, sic_code, sic_description, sic_tier, observable_signal, has_website, website_url, facebook_url, director_name, incorporated_on, psc_corporate_count, psc_individual_count, director_active_appointments, within_pool_director_count, greenfield_flag",
     )
     .is("surfaced_in_digest_at", null);
   if (candidatesResult.error) throw candidatesResult.error;
@@ -273,6 +273,11 @@ export async function rank(
       facebook_url: r.facebook_url,
       director_name: r.director_name,
       incorporated_on: r.incorporated_on,
+      psc_corporate_count: r.psc_corporate_count,
+      psc_individual_count: r.psc_individual_count,
+      director_active_appointments: r.director_active_appointments,
+      within_pool_director_count: r.within_pool_director_count,
+      greenfield_flag: r.greenfield_flag,
     }))
     .sort(byFitThenRecencyThenId);
 
@@ -377,7 +382,14 @@ export async function rank(
       });
       continue;
     }
-    const score = Math.max(0, Math.min(100, Math.round(r.score)));
+    let score = Math.max(0, Math.min(100, Math.round(r.score)));
+    // Deterministic cap on group_subsidiary regardless of LLM output.
+    // The 45 ceiling sits well below MIN_SURFACING_SCORE (80, lib/
+    // config.ts), so a subsidiary cannot reach the digest even if the
+    // prompt is bypassed or the model emits a high score.
+    if (prospect.greenfield_flag === "group_subsidiary") {
+      score = Math.min(score, 45);
+    }
     scored.push({
       prospect_id: r.prospect_id,
       company_name: prospect.company_name,

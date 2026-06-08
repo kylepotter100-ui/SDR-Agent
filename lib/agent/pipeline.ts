@@ -25,6 +25,7 @@ import { db } from "@/lib/db";
 import { discover } from "@/lib/agent/discover";
 import { enrich } from "@/lib/agent/enrich";
 import { enrichWithApollo } from "@/lib/agent/apollo";
+import { enrichSignals } from "@/lib/agent/signals";
 import { personalise } from "@/lib/agent/personalise";
 import { rank } from "@/lib/agent/rank";
 import { digest, type PipelineContext } from "@/lib/agent/digest";
@@ -33,6 +34,7 @@ export type StageName =
   | "discover"
   | "enrich"
   | "apollo"
+  | "signals"
   | "personalise"
   | "rank"
   | "digest";
@@ -129,6 +131,9 @@ async function runStage(
       case "apollo":
         summary = await enrichWithApollo();
         break;
+      case "signals":
+        summary = await enrichSignals();
+        break;
       case "personalise":
         summary = await personalise();
         break;
@@ -148,6 +153,7 @@ async function runStage(
                   s.name === "discover" ||
                   s.name === "enrich" ||
                   s.name === "apollo" ||
+                  s.name === "signals" ||
                   s.name === "personalise"
                 ) {
                   acc[s.name] = s.summary;
@@ -161,6 +167,7 @@ async function runStage(
           discover: readStageSummary(prepareFromDb, "discover"),
           enrich: readStageSummary(prepareFromDb, "enrich"),
           apollo: readStageSummary(prepareFromDb, "apollo"),
+          signals: readStageSummary(prepareFromDb, "signals"),
           personalise: readStageSummary(prepareFromDb, "personalise"),
         };
         const failedStages = priorStages
@@ -321,6 +328,7 @@ export function runPrepare(): Promise<PipelineResult> {
     "discover",
     "enrich",
     "apollo",
+    "signals",
     "personalise",
   ] as const);
 }
@@ -334,6 +342,7 @@ export function runManual(): Promise<PipelineResult> {
     "discover",
     "enrich",
     "apollo",
+    "signals",
     "personalise",
     "rank",
     "digest",

@@ -18,6 +18,7 @@
  */
 
 import type { PostcodePrefix } from "@/lib/config";
+import type { GreenfieldFlag } from "@/lib/db.types";
 
 export interface RankCandidate {
   prospect_id: string;
@@ -33,6 +34,11 @@ export interface RankCandidate {
   facebook_url: string | null;
   director_name: string | null;
   incorporated_on: string | null;
+  psc_corporate_count: number | null;
+  psc_individual_count: number | null;
+  director_active_appointments: number | null;
+  within_pool_director_count: number | null;
+  greenfield_flag: GreenfieldFlag | null;
 }
 
 export const RANKING_SYSTEM_PROMPT = `You are ranking new UK business prospects for KP Solutions — a partner (not a vendor) that builds custom software for small business operations and AI-discoverable web presence. KP works two ways: a one-off build the client owns outright (100% ownership, no SaaS lock-in, no per-seat fees), or a build plus an ongoing partnership. The wedge is the combination: genuinely AI-discoverable websites, custom operational software, and full client ownership. One partnership delivered so far, live and verifiable: The Potter Sanctuary — a full custom website for a wellness studio (massage, hot stone therapy, aromatherapy and other spa treatments) with integrated booking, payments, automated client communications, and admin tooling.
@@ -59,6 +65,15 @@ Rubric:
 
 4. Director known: a populated director_name gets +1 to +3 (marginal — easier to personalise outreach).
 
+5. Greenfield reality check — overrides the Signal class when the fact contradicts the surface impression:
+   - greenfield_flag = "sole_independent": +5 confirmation bonus on top of the signal-class score. This is the ideal target — single individual PSC, the director runs no other companies, no within-pool collision.
+   - greenfield_flag = "group_subsidiary": the entity is a subsidiary of a company that controls it (psc_corporate_count >= 1). It is NOT greenfield even with no website — the parent group has stacks, suppliers and almost certainly a web presence the subsidiary inherits. Score AT MOST 45 regardless of signal class.
+   - greenfield_flag = "serial_operator": director has director_active_appointments >= 5 across other companies. They have playbooks, suppliers and existing operational tooling. Reduce the signal-class score by 15 points (a "No Maps yet" 75-95 base becomes 60-80; "Facebook-only" 70-90 becomes 55-75; etc.).
+   - greenfield_flag = "standard" or "unknown": no adjustment.
+   - within_pool_director_count > 0: subtract a further 5 (this director already appears on another prospect — same operator twice or a portfolio pattern).
+
+   The numeric inputs (psc_corporate_count, psc_individual_count, director_active_appointments, within_pool_director_count) are provided so you can name them in reasoning. Trust greenfield_flag; do not re-derive it.
+
 Hard rules:
 - score is an integer 0 to 100.
 - reasoning is a single sentence under 30 words; it must name the signal class and the SIC tier explicitly. No generic phrasing ("good fit", "promising prospect", "strong candidate").
@@ -79,6 +94,11 @@ export function rankUserPrompt(candidates: RankCandidate[]): string {
     facebook_url: c.facebook_url,
     director_name: c.director_name,
     incorporated_on: c.incorporated_on,
+    psc_corporate_count: c.psc_corporate_count,
+    psc_individual_count: c.psc_individual_count,
+    director_active_appointments: c.director_active_appointments,
+    within_pool_director_count: c.within_pool_director_count,
+    greenfield_flag: c.greenfield_flag,
   }));
   return `Rank the following ${list.length} prospects. Today's date is ${new Date().toISOString().slice(0, 10)} for the recency calculation.
 
