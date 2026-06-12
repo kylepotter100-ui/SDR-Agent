@@ -28,7 +28,7 @@ const SIC_CODES_FOR_DISCOVERY: readonly string[] = SIC_CODES
   .map((c) => c.code);
 
 const PAGE_SIZE = 100;
-const LOOKBACK_DAYS = 7;
+const LOOKBACK_DAYS = 30;
 const PAGE_LIMIT = 50;
 
 interface CompaniesHouseAddress {
